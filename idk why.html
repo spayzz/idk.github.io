@@ -1,0 +1,3846 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OMORI — Белое Пространство (Интерактивная RPG)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Comfortaa:wght@500;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --omori-black: #08080a;
+            --omori-white: #f8f8f6;
+            --omori-red: #e62e3d;
+            --omori-blue: #3b82f6;
+            --omori-cyan: #22d3ee;
+            --omori-pink: #f472b6;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #050507;
+            color: #f8f8f6;
+            font-family: 'Caveat', 'Comfortaa', cursive, sans-serif;
+            overflow: hidden;
+            height: 100dvh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Декоративная текстура бумаги и виньетка */
+        .crt-overlay {
+            pointer-events: none;
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at center, transparent 60%, rgba(0, 0, 0, 0.65) 100%);
+            z-index: 40;
+        }
+
+        /* Стилизация кнопок в духе рисованного интерфейса OMORI */
+        .omori-btn {
+            background: #0a0a0d;
+            color: #ffffff;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 0 2px #0a0a0d, 0 0 0 4px #ffffff;
+            font-family: 'Comfortaa', sans-serif;
+            font-weight: 700;
+            transition: transform 0.08s ease, background-color 0.12s ease, color 0.12s ease;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+
+        .omori-btn:hover {
+            background: #1c1c24;
+        }
+
+        .omori-btn:active, .omori-btn.active-press {
+            transform: scale(0.94);
+            background: #ffffff;
+            color: #0a0a0d;
+        }
+
+        .omori-btn-red {
+            border-color: #ef4444;
+            box-shadow: 0 0 0 2px #0a0a0d, 0 0 0 4px #ef4444;
+        }
+
+        #canvas-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            max-width: 880px;
+            aspect-ratio: 4 / 3;
+            max-height: calc(100dvh - 64px);
+            padding: 8px;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background-color: #ffffff;
+            border: 3px solid #ffffff;
+            box-shadow: 0 0 0 3px #000000, 0 0 0 6px #ffffff, 0 18px 50px rgba(0,0,0,0.9);
+            border-radius: 4px;
+            image-rendering: auto;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="select-none">
+    <div class="crt-overlay"></div>
+
+    <!-- Верхняя панель статуса и управления звуком -->
+    <header class="w-full max-w-[880px] px-3 py-1.5 flex items-center justify-between gap-2 z-30">
+        <div class="flex items-center gap-2.5">
+            <div class="w-3 h-3 bg-white rounded-full animate-pulse border border-black"></div>
+            <span class="font-bold tracking-widest text-sm sm:text-base text-white uppercase" style="font-family: 'Comfortaa', sans-serif;">
+                АНЯ <span class="text-xs text-zinc-400 font-normal hidden sm:inline">// БЕЛОЕ ПРОСТРАНСТВО</span>
+            </span>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-3">
+            <span id="location-badge" class="text-xs sm:text-sm px-2.5 py-0.5 bg-zinc-900 border border-white/80 rounded text-zinc-200" style="font-family: 'Comfortaa', sans-serif;">
+                Локация: БЕЛОЕ ПРОСТРАНСТВО
+            </span>
+            <button id="btn-audio" class="omori-btn px-2.5 py-1 text-xs rounded flex items-center gap-1.5" title="Включить / выключить звук">
+                <span id="audio-icon">🔊</span>
+                <span id="audio-label" class="hidden sm:inline">ЗВУК: ВКЛ</span>
+            </button>
+            <button id="btn-restart" class="omori-btn px-2.5 py-1 text-xs rounded" title="Начать заново">
+                ↺ СБРОС
+            </button>
+        </div>
+    </header>
+
+    <!-- Игровой холст -->
+    <main id="canvas-container" class="z-20">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+    </main>
+
+    <script>
+        /***********************************************************************
+         * OMORI — ИНТЕРАКТИВНАЯ HTML5 CANVAS RPG НА РУССКОМ ЯЗЫКЕ
+         * Включает:
+         * - Эффект карандашного дрожания линий (Line-Boil каждые 150 мс)
+         * - Процедурную музыку и звуки на Web Audio API (White Space, Dreamworld, Battle, Awakening)
+         * - Полную анимацию Омори в 4 направлениях
+         * - Белое Пространство, интерактивный Альбом с зарисовками, Дневник в ноутбуке
+         * - Коридор Воспоминаний с силуэтами друзей и Красными Руками
+         * - Полноценную пошаговую битву в стиле OMORI с системой ЭМОЦИЙ
+         ***********************************************************************/
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const locationBadge = document.getElementById('location-badge');
+
+        // Внутреннее разрешение холста
+        const W = 800;
+        const H = 600;
+
+        // Глобальный таймер для эффекта карандашной рисовки (line-boil каждые 150 мс)
+        let boilFrame = 0;
+        let lastBoilTime = 0;
+        const BOIL_INTERVAL = 150;
+
+        // Таблица детерминированных смещений для эффекта «дрожащего карандаша»
+        function boilOffset(seed, amplitude = 1.6) {
+            const s = (seed * 17 + boilFrame * 31) % 97;
+            return ((s / 97) - 0.5) * 2 * amplitude;
+        }
+
+        // Рисование «дрожащей» карандашной линии
+        function drawSketchLine(x1, y1, x2, y2, color = '#000', lineWidth = 2, seed = 1, segments = 4) {
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(x1 + boilOffset(seed, 1.1), y1 + boilOffset(seed + 1, 1.1));
+            for (let i = 1; i <= segments; i++) {
+                const t = i / segments;
+                const nx = x1 + (x2 - x1) * t + (i < segments ? boilOffset(seed + i * 7, 1.4) : boilOffset(seed + 99, 0.9));
+                const ny = y1 + (y2 - y1) * t + (i < segments ? boilOffset(seed + i * 13, 1.4) : boilOffset(seed + 105, 0.9));
+                ctx.lineTo(nx, ny);
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Рисование «дрожащего» прямоугольника или окна интерфейса OMORI
+        function drawOmoriBox(x, y, w, h, options = {}) {
+            const {
+                fill = '#08080a',
+                border = '#ffffff',
+                doubleBorder = true,
+                seed = 10,
+                boilAmp = 1.3
+            } = options;
+
+            ctx.save();
+            // Основная заливка
+            ctx.fillStyle = fill;
+            ctx.beginPath();
+            ctx.moveTo(x + boilOffset(seed, boilAmp), y + boilOffset(seed + 1, boilAmp));
+            ctx.lineTo(x + w + boilOffset(seed + 2, boilAmp), y + boilOffset(seed + 3, boilAmp));
+            ctx.lineTo(x + w + boilOffset(seed + 4, boilAmp), y + h + boilOffset(seed + 5, boilAmp));
+            ctx.lineTo(x + boilOffset(seed + 6, boilAmp), y + h + boilOffset(seed + 7, boilAmp));
+            ctx.closePath();
+            ctx.fill();
+
+            // Внешняя рисованная рамка
+            ctx.strokeStyle = border;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Вторая (двойная карандашная) внутренняя рамка
+            if (doubleBorder) {
+                const pad = 5;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(x + pad + boilOffset(seed + 11, boilAmp * 0.8), y + pad + boilOffset(seed + 12, boilAmp * 0.8));
+                ctx.lineTo(x + w - pad + boilOffset(seed + 13, boilAmp * 0.8), y + pad + boilOffset(seed + 14, boilAmp * 0.8));
+                ctx.lineTo(x + w - pad + boilOffset(seed + 15, boilAmp * 0.8), y + h - pad + boilOffset(seed + 16, boilAmp * 0.8));
+                ctx.lineTo(x + pad + boilOffset(seed + 17, boilAmp * 0.8), y + h - pad + boilOffset(seed + 18, boilAmp * 0.8));
+                ctx.closePath();
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        // Рисование дрожащей окружности / овала
+        function drawSketchCircle(cx, cy, rx, ry, fill, stroke, lineWidth = 2, seed = 1) {
+            ctx.save();
+            ctx.beginPath();
+            const steps = 16;
+            for (let i = 0; i <= steps; i++) {
+                const a = (i / steps) * Math.PI * 2;
+                const rOx = boilOffset(seed + i * 3, 1.2);
+                const rOy = boilOffset(seed + i * 5 + 1, 1.2);
+                const px = cx + Math.cos(a) * rx + rOx;
+                const py = cy + Math.sin(a) * ry + rOy;
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            if (fill) {
+                ctx.fillStyle = fill;
+                ctx.fill();
+            }
+            if (stroke) {
+                ctx.strokeStyle = stroke;
+                ctx.lineWidth = lineWidth;
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        /***********************************************************************
+         * WEB AUDIO API — ПРОЦЕДУРНЫЙ САУНДТРЕК И ЗВУКОВЫЕ ЭФФЕКТЫ OMORI
+         ***********************************************************************/
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+                this.currentTheme = 'none';
+                this.noteIndex = 0;
+                this.nextNoteTime = 0;
+                this.isPlaying = false;
+
+                // Мелодии в стиле OMORI
+                // 1. White Space (вальс 3/4, меланхоличное пианино)
+                this.whiteSpaceNotes = [
+                    { f: 659.25, d: 0.48 }, // E5
+                    { f: 493.88, d: 0.48 }, // B4
+                    { f: 392.00, d: 0.48 }, // G4
+                    { f: 659.25, d: 0.48 }, // E5
+                    { f: 493.88, d: 0.48 }, // B4
+                    { f: 392.00, d: 0.48 }, // G4
+                    { f: 622.25, d: 0.48 }, // D#5
+                    { f: 493.88, d: 0.48 }, // B4
+                    { f: 369.99, d: 0.48 }, // F#4
+                    { f: 622.25, d: 0.48 }, // D#5
+                    { f: 493.88, d: 0.48 }, // B4
+                    { f: 369.99, d: 0.48 }, // F#4
+                    { f: 587.33, d: 0.48 }, // D5
+                    { f: 440.00, d: 0.48 }, // A4
+                    { f: 349.23, d: 0.48 }, // F4
+                    { f: 523.25, d: 0.48 }, // C5
+                    { f: 440.00, d: 0.48 }, // A4
+                    { f: 329.63, d: 0.48 }  // E4
+                ];
+
+                // 2. Коридор Воспоминаний (хрупкая музыкальная шкатулка с диссонансом)
+                this.corridorNotes = [
+                    { f: 523.25, d: 0.55 }, // C5
+                    { f: 659.25, d: 0.55 }, // E5
+                    { f: 587.33, d: 0.55 }, // D5
+                    { f: 493.88, d: 0.55 }, // B4
+                    { f: 440.00, d: 0.55 }, // A4
+                    { f: 392.00, d: 0.55 }, // G4
+                    { f: 369.99, d: 0.70 }, // F#4
+                    { f: 329.63, d: 0.75 }  // E4
+                ];
+
+                // 3. Тема битвы с ЧТО-ТО (тревожный пульс и высокий скрип)
+                this.battleNotes = [
+                    { f: 110.00, d: 0.32, type: 'sawtooth' },
+                    { f: 116.54, d: 0.32, type: 'sawtooth' },
+                    { f: 880.00, d: 0.16, type: 'triangle' },
+                    { f: 110.00, d: 0.32, type: 'sawtooth' },
+                    { f: 932.33, d: 0.16, type: 'triangle' },
+                    { f: 103.83, d: 0.42, type: 'sawtooth' },
+                    { f: 783.99, d: 0.25, type: 'triangle' },
+                    { f: 73.42,  d: 0.45, type: 'sawtooth' }
+                ];
+
+                // 4. Светлая концовка (Пробуждение / Duet-подобная теплая гармония)
+                this.endingNotes = [
+                    { f: 523.25, d: 0.65 }, // C5
+                    { f: 392.00, d: 0.65 }, // G4
+                    { f: 440.00, d: 0.65 }, // A4
+                    { f: 329.63, d: 0.65 }, // E4
+                    { f: 349.23, d: 0.65 }, // F4
+                    { f: 523.25, d: 0.65 }, // C5
+                    { f: 493.88, d: 0.65 }, // B4
+                    { f: 392.00, d: 0.85 }  // G4
+                ];
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) {
+                        this.ctx = new AudioCtx();
+                    }
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+                this.isPlaying = true;
+            }
+
+            toggleMute() {
+                this.init();
+                this.muted = !this.muted;
+                return this.muted;
+            }
+
+            setTheme(theme) {
+                if (this.currentTheme !== theme) {
+                    this.currentTheme = theme;
+                    this.noteIndex = 0;
+                    if (this.ctx) {
+                        this.nextNoteTime = this.ctx.currentTime + 0.08;
+                    }
+                }
+            }
+
+            update() {
+                if (!this.ctx || this.muted || !this.isPlaying || this.currentTheme === 'none') return;
+                if (this.ctx.state === 'suspended') return;
+
+                const now = this.ctx.currentTime;
+                if (now >= this.nextNoteTime) {
+                    let list = this.whiteSpaceNotes;
+                    if (this.currentTheme === 'corridor') list = this.corridorNotes;
+                    else if (this.currentTheme === 'battle') list = this.battleNotes;
+                    else if (this.currentTheme === 'ending') list = this.endingNotes;
+
+                    const note = list[this.noteIndex % list.length];
+                    this.playPianoNote(note.f, note.d, note.type || 'sine');
+                    this.noteIndex++;
+                    this.nextNoteTime = now + note.d;
+                }
+            }
+
+            playPianoNote(freq, duration, wave = 'sine') {
+                if (!this.ctx || this.muted) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const sub = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    const filter = this.ctx.createBiquadFilter();
+
+                    osc.type = wave === 'sawtooth' ? 'sawtooth' : 'triangle';
+                    sub.type = 'sine';
+
+                    osc.frequency.setValueAtTime(freq, now);
+                    sub.frequency.setValueAtTime(freq * 0.5, now);
+
+                    filter.type = 'lowpass';
+                    filter.frequency.setValueAtTime(wave === 'sawtooth' ? 520 : 1350, now);
+
+                    const peak = wave === 'sawtooth' ? 0.045 : 0.065;
+                    gain.gain.setValueAtTime(0.0001, now);
+                    gain.gain.linearRampToValueAtTime(peak, now + 0.025);
+                    gain.gain.exponentialRampToValueAtTime(0.0008, now + duration * 1.35);
+
+                    osc.connect(filter);
+                    sub.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(now);
+                    sub.start(now);
+                    osc.stop(now + duration * 1.4);
+                    sub.stop(now + duration * 1.4);
+                } catch (e) {}
+            }
+
+            playTextBlip(pitch = 540, creepy = false) {
+                if (!this.ctx || this.muted) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = creepy ? 'sawtooth' : 'square';
+                    osc.frequency.setValueAtTime(creepy ? 170 + Math.random() * 50 : pitch + (Math.random() * 40 - 20), now);
+                    gain.gain.setValueAtTime(0.028, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.05);
+                } catch (e) {}
+            }
+
+            playCursor() {
+                if (!this.ctx || this.muted) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(780, now);
+                    gain.gain.setValueAtTime(0.04, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.055);
+                } catch (e) {}
+            }
+
+            playConfirm() {
+                if (!this.ctx || this.muted) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523.25, now);
+                    osc.frequency.setValueAtTime(783.99, now + 0.05);
+                    gain.gain.setValueAtTime(0.06, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.17);
+                } catch (e) {}
+            }
+
+            playSlash() {
+                if (!this.ctx || this.muted) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(920, now);
+                    osc.frequency.exponentialRampToValueAtTime(110, now + 0.19);
+                    gain.gain.setValueAtTime(0.11, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.21);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.22);
+                } catch (e) {}
+            }
+
+            playHeal() {
+                if (!this.ctx || this.muted) return;
+                try {
+                    const notes = [440, 554.37, 659.25, 880];
+                    notes.forEach((f, idx) => {
+                        const now = this.ctx.currentTime + idx * 0.06;
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(f, now);
+                        gain.gain.setValueAtTime(0.05, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.start(now);
+                        osc.stop(now + 0.19);
+                    });
+                } catch (e) {}
+            }
+
+            playScare() {
+                if (!this.ctx || this.muted) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc1 = this.ctx.createOscillator();
+                    const osc2 = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc1.type = 'sawtooth';
+                    osc2.type = 'square';
+                    osc1.frequency.setValueAtTime(98, now);
+                    osc2.frequency.setValueAtTime(104.5, now);
+                    gain.gain.setValueAtTime(0.12, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+                    osc1.connect(gain);
+                    osc2.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc1.start(now);
+                    osc2.start(now);
+                    osc1.stop(now + 0.66);
+                    osc2.stop(now + 0.66);
+                } catch (e) {}
+            }
+
+            playBark() {
+                if (!this.ctx || this.muted) return;
+                try {
+                    // Двойной звонкий радостный «Тяф-тяф!» для пёсика Батона
+                    [0, 0.14].forEach((offset, idx) => {
+                        const now = this.ctx.currentTime + offset;
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = 'triangle';
+                        const startF = idx === 0 ? 520 : 590;
+                        osc.frequency.setValueAtTime(startF, now);
+                        osc.frequency.exponentialRampToValueAtTime(startF * 1.65, now + 0.045);
+                        osc.frequency.exponentialRampToValueAtTime(340, now + 0.11);
+                        gain.gain.setValueAtTime(0.001, now);
+                        gain.gain.linearRampToValueAtTime(0.08, now + 0.015);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.115);
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.start(now);
+                        osc.stop(now + 0.12);
+                    });
+                } catch (e) {}
+            }
+        }
+
+        const sound = new SoundEngine();
+
+        /***********************************************************************
+         * СОСТОЯНИЕ ИГРЫ И СЮЖЕТНЫЕ ДАННЫЕ
+         ***********************************************************************/
+        const GAME_STATE = {
+            TITLE: 'TITLE',
+            EXPLORE: 'EXPLORE',
+            SKETCHBOOK: 'SKETCHBOOK',
+            LAPTOP: 'LAPTOP',
+            PHOTO_CUTSCENE: 'PHOTO_CUTSCENE',
+            BATTLE: 'BATTLE',
+            ENDING: 'ENDING'
+        };
+
+        let currentState = GAME_STATE.TITLE;
+        let currentLocation = 'WHITE_SPACE'; // 'WHITE_SPACE' | 'CORRIDOR' | 'REAL_ROOM'
+
+        // Главная героиня — АНЯ
+        const player = {
+            x: 400,
+            y: 325,
+            dir: 'down', // 'down' | 'up' | 'left' | 'right'
+            moving: false,
+            stepTimer: 0,
+            stepFrame: 0,
+            speed: 2.7,
+            runSpeed: 4.5,
+            emotion: 'NEUTRAL' // 'NEUTRAL' (АНЯ) | 'SAD' | 'AFRAID' | 'ANGRY' | 'CALM'
+        };
+
+        // Флаги прогресса сюжета
+        const flags = {
+            inspectedMewo: false,
+            inspectedLaptop: false,
+            inspectedSketchbook: false,
+            inspectedTissues: false,
+            inspectedLightbulb: false,
+            knifeSpawned: false,
+            hasKnife: false,
+            doorSpawned: false,
+            talkedFriends: 0,
+            mewoPetCount: 0,
+            batonHeartTimer: 0,
+            endingType: null // 'SUPPRESS' | 'ACCEPT'
+        };
+
+        // Интерактивные объекты Белого Пространства
+        function getWhiteSpaceObjects() {
+            const objs = [
+                {
+                    id: 'lightbulb',
+                    name: 'Чёрная лампочка',
+                    x: 400,
+                    y: 205,
+                    radius: 34,
+                    solid: false
+                },
+                {
+                    id: 'mewo',
+                    name: 'Пёсик БАТОН',
+                    x: 298,
+                    y: 288,
+                    radius: 34,
+                    solid: true
+                },
+                {
+                    id: 'laptop',
+                    name: 'Ноутбук',
+                    x: 340,
+                    y: 235,
+                    radius: 30,
+                    solid: true
+                },
+                {
+                    id: 'sketchbook',
+                    name: 'Альбом для рисования',
+                    x: 465,
+                    y: 245,
+                    radius: 30,
+                    solid: true
+                },
+                {
+                    id: 'tissues',
+                    name: 'Коробка салфеток',
+                    x: 475,
+                    y: 325,
+                    radius: 28,
+                    solid: true
+                }
+            ];
+
+            if (flags.knifeSpawned && !flags.hasKnife) {
+                objs.push({
+                    id: 'knife',
+                    name: 'Блестящий нож',
+                    x: 270,
+                    y: 385,
+                    radius: 30,
+                    solid: false
+                });
+            }
+
+            if (flags.doorSpawned) {
+                objs.push({
+                    id: 'whitedoor',
+                    name: 'Белая дверь',
+                    x: 400,
+                    y: 468,
+                    radius: 38,
+                    solid: true
+                });
+            }
+
+            return objs;
+        }
+
+        // Объекты локации 2: Коридор Воспоминаний / Соседняя Комната
+        function getCorridorObjects() {
+            return [
+                {
+                    id: 'return_door',
+                    name: 'Белая дверь назад',
+                    x: 400,
+                    y: 515,
+                    radius: 36,
+                    solid: true
+                },
+                {
+                    id: 'memory_friends',
+                    name: 'Силуэты друзей',
+                    x: 265,
+                    y: 340,
+                    radius: 42,
+                    solid: true
+                },
+                {
+                    id: 'memory_mari',
+                    name: 'Пианино у окна',
+                    x: 535,
+                    y: 315,
+                    radius: 42,
+                    solid: true
+                },
+                {
+                    id: 'fallen_photo',
+                    name: 'Выпавшая фотография',
+                    x: 400,
+                    y: 175,
+                    radius: 36,
+                    solid: false
+                }
+            ];
+        }
+
+        // Проверка количества осмотренных ключевых предметов для появления Блестящего Ножа
+        function countInspectedItems() {
+            let count = 0;
+            if (flags.inspectedMewo) count++;
+            if (flags.inspectedLaptop) count++;
+            if (flags.inspectedSketchbook) count++;
+            if (flags.inspectedTissues) count++;
+            if (flags.inspectedLightbulb) count++;
+            return count;
+        }
+
+        /***********************************************************************
+         * СИСТЕМА ДИАЛОГОВ И ПОРТРЕТОВ OMORI
+         ***********************************************************************/
+        const dialogue = {
+            active: false,
+            pages: [],
+            pageIndex: 0,
+            charIndex: 0,
+            charTimer: 0,
+            speaker: '',
+            portrait: 'OMORI', // 'OMORI' | 'MEWO' | 'SHADOW' | 'SOMETHING' | 'SUNNY' | 'NONE'
+            emotion: 'NEUTRAL', // 'NEUTRAL' | 'SAD' | 'AFRAID' | 'ANGRY' | 'CALM'
+            choices: null, // [{ label: 'Да', action: () => {} }, ...]
+            choiceIndex: 0,
+            onFinish: null
+        };
+
+        function startDialogue(pages, options = {}) {
+            sound.init();
+            dialogue.active = true;
+            dialogue.pages = pages;
+            dialogue.pageIndex = 0;
+            dialogue.charIndex = 0;
+            dialogue.charTimer = 0;
+            dialogue.speaker = options.speaker || '';
+            dialogue.portrait = options.portrait !== undefined ? options.portrait : 'OMORI';
+            dialogue.emotion = options.emotion || player.emotion || 'NEUTRAL';
+            dialogue.choices = options.choices || null;
+            dialogue.choiceIndex = 0;
+            dialogue.onFinish = options.onFinish || null;
+
+            if (pages[0] && typeof pages[0] === 'object') {
+                applyPageConfig(pages[0]);
+            }
+        }
+
+        function applyPageConfig(pageObj) {
+            if (pageObj.speaker !== undefined) dialogue.speaker = pageObj.speaker;
+            if (pageObj.portrait !== undefined) dialogue.portrait = pageObj.portrait;
+            if (pageObj.emotion !== undefined) {
+                dialogue.emotion = pageObj.emotion;
+                if (dialogue.portrait === 'OMORI') player.emotion = pageObj.emotion;
+            }
+        }
+
+        function getCurrentPageText() {
+            const p = dialogue.pages[dialogue.pageIndex];
+            if (!p) return '';
+            return typeof p === 'string' ? p : p.text;
+        }
+
+        function advanceDialogue() {
+            if (!dialogue.active) return;
+            const fullText = getCurrentPageText();
+
+            // Если текст еще печатается — мгновенно показать весь текст
+            if (dialogue.charIndex < fullText.length) {
+                dialogue.charIndex = fullText.length;
+                return;
+            }
+
+            // Если это последняя страница и есть выбор
+            if (dialogue.pageIndex >= dialogue.pages.length - 1 && dialogue.choices && dialogue.choices.length > 0) {
+                const chosen = dialogue.choices[dialogue.choiceIndex];
+                sound.playConfirm();
+                dialogue.active = false;
+                if (chosen && chosen.action) chosen.action();
+                return;
+            }
+
+            // Переход к следующей реплике
+            if (dialogue.pageIndex < dialogue.pages.length - 1) {
+                dialogue.pageIndex++;
+                dialogue.charIndex = 0;
+                const nextP = dialogue.pages[dialogue.pageIndex];
+                if (typeof nextP === 'object') {
+                    applyPageConfig(nextP);
+                }
+                sound.playCursor();
+            } else {
+                // Закрытие диалога
+                dialogue.active = false;
+                const cb = dialogue.onFinish;
+                dialogue.onFinish = null;
+                if (cb) cb();
+                checkKnifeTrigger();
+            }
+        }
+
+        function checkKnifeTrigger() {
+            if (!flags.knifeSpawned && countInspectedItems() >= 3 && currentLocation === 'WHITE_SPACE') {
+                flags.knifeSpawned = true;
+                sound.playConfirm();
+                startDialogue([
+                    {
+                        text: 'Где-то неподалёку в пустоте раздался тихий металлический звон...',
+                        portrait: 'OMORI',
+                        emotion: 'NEUTRAL'
+                    },
+                    {
+                        text: 'На белом полу появился БЛЕСТЯЩИЙ НОЖ.',
+                        portrait: 'OMORI',
+                        emotion: 'NEUTRAL'
+                    }
+                ]);
+            }
+        }
+
+        /***********************************************************************
+         * АЛЬБОМ ДЛЯ РИСОВАНИЯ (SKETCHBOOK VIEWER)
+         ***********************************************************************/
+        let sketchbookPage = 0;
+        const sketchbookDrawings = [
+            {
+                title: 'СТРАНИЦА 1 — «ПЁСИК БАТОН»',
+                caption: 'Любимый пушистый пёсик Батон с огромными ушами сидит на ладони и приветливо тянет лапку с милыми подушечками.'
+            },
+            {
+                title: 'СТРАНИЦА 2 — «АНЯ И ДРУЗЬЯ»',
+                caption: 'Тёплый карандашный рисунок Ани и близких людей. Рядом на полях аккуратно выведены звёздочки.'
+            },
+            {
+                title: 'СТРАНИЦА 3 — «КРАСНЫЕ РУКИ»',
+                caption: 'Десятки длинных красных рук тянутся из пустоты к маленькой фигурке в центре листа.'
+            },
+            {
+                title: 'СТРАНИЦА 4 — «ЧТО-ТО ЗА СПИНОЙ»',
+                caption: 'Силуэт у лестницы и один-единственный огромный глаз, смотрящий прямо сквозь бумагу на тебя.'
+            }
+        ];
+
+        /***********************************************************************
+         * ПОШАГОВАЯ БОЕВАЯ СИСТЕМА В СТИЛЕ OMORI
+         ***********************************************************************/
+        const battle = {
+            phase: 'MENU', // 'MENU' | 'SUBMENU' | 'ANIMATING' | 'FINAL_CHOICE'
+            menuIndex: 0, // 0: АТАКА, 1: НАВЫК, 2: ПЕРЕКУС, 3: ИГРУШКИ
+            subMenuIndex: 0,
+            subMenuType: null, // 'SKILLS' | 'SNACKS' | 'TOYS'
+            turnCount: 0,
+            omori: {
+                hp: 100,
+                maxHp: 100,
+                juice: 50,
+                maxJuice: 50,
+                emotion: 'NEUTRAL', // 'NEUTRAL' | 'SAD' | 'ANGRY' | 'AFRAID' | 'CALM'
+                atkBonus: 0,
+                defBonus: 0
+            },
+            enemy: {
+                name: 'ЧТО-ТО В ТЕМНОТЕ',
+                hp: 260,
+                maxHp: 260,
+                emotion: 'NEUTRAL',
+                eyeOpen: 1,
+                shake: 0
+            },
+            logText: 'ЧТО-ТО В ТЕМНОТЕ неподвижно смотрит прямо сквозь АНЮ.',
+            slashAnim: 0,
+            screenShake: 0,
+            redFlash: 0,
+            floatingDamages: [], // { x, y, text, color, timer }
+            choiceIndex: 0,
+            skills: [
+                { name: 'УСПОКОИТЬСЯ', cost: 0, desc: 'Глубокий вдох. Восстанавливает +35 СЕРДЕЦ и возвращает состояние АНЯ.' },
+                { name: 'ПЕЧАЛЬНЫЙ СТИХ', cost: 10, desc: 'АНЯ становится ГРУСТНОЙ (Защита ↑, часть урона уходит в СОК).' },
+                { name: 'ЯРОСТНЫЙ ВЫПАД', cost: 15, desc: 'АНЯ становится ЗЛОЙ и наносит двойной удар (Атака ↑↑).' },
+                { name: 'ПРИСТАЛЬНЫЙ ВЗГЛЯД', cost: 12, desc: 'Ослабляет хватку ЧТО-ТО и пробивает тень (75 ед. урона).' }
+            ],
+            snacks: [
+                { name: 'Клубничное молоко', count: 2, desc: 'Восстанавливает +45 СЕРДЕЦ. Вкус беззаботного детства.', type: 'hp', val: 45 },
+                { name: 'Яблочный сок', count: 2, desc: 'Восстанавливает +30 СОКА.', type: 'juice', val: 30 },
+                { name: 'Конфета сна', count: 1, desc: 'Полностью восстанавливает СЕРДЦА и СОК.', type: 'both', val: 100 }
+            ],
+            toys: [
+                { name: 'Белый одуванчик', count: 2, desc: 'Освежает мысли и возвращает состояние АНЯ.', type: 'calm' },
+                { name: 'Забытая нота', count: 1, desc: 'Звучит знакомый аккорд пианино. Наносит 85 урона Тьме.', type: 'chord' }
+            ]
+        };
+
+        function initBattle() {
+            currentState = GAME_STATE.BATTLE;
+            sound.setTheme('battle');
+            sound.playScare();
+            battle.phase = 'MENU';
+            battle.menuIndex = 0;
+            battle.subMenuIndex = 0;
+            battle.turnCount = 0;
+            const bonusHp = flags.mewoPetCount > 0 ? 15 : 0;
+            battle.omori.maxHp = 100 + bonusHp;
+            battle.omori.hp = battle.omori.maxHp;
+            battle.omori.juice = 50;
+            battle.omori.maxJuice = 50;
+            battle.omori.emotion = 'NEUTRAL';
+            player.emotion = 'NEUTRAL';
+            battle.enemy.hp = 260;
+            battle.enemy.maxHp = 260;
+            battle.logText = flags.mewoPetCount > 0
+                ? 'Поддержка пёсика БАТОНА придаёт АНЕ смелости (+15 СЕРДЕЦ)!'
+                : 'ЧТО-ТО В ТЕМНОТЕ преграждает тебе путь! Но АНЯ готова дать отпор!';
+            battle.floatingDamages = [];
+            battle.choiceIndex = 0;
+            locationBadge.textContent = 'СХВАТКА: ЧТО-ТО В ТЕМНОТЕ';
+        }
+
+        function spawnDamagePopup(x, y, text, color = '#ffffff') {
+            battle.floatingDamages.push({
+                x,
+                y,
+                text: String(text),
+                color,
+                timer: 48
+            });
+        }
+
+        function executePlayerBattleAction(actionType, index = 0) {
+            if (battle.phase === 'ANIMATING') return;
+            battle.phase = 'ANIMATING';
+            battle.turnCount++;
+
+            if (actionType === 'ATTACK') {
+                sound.playSlash();
+                battle.slashAnim = 18;
+                battle.enemy.shake = 16;
+
+                let baseDmg = 42 + Math.floor(Math.random() * 14);
+                if (battle.omori.emotion === 'ANGRY') baseDmg = Math.floor(baseDmg * 1.55);
+                if (battle.omori.emotion === 'SAD') baseDmg = Math.floor(baseDmg * 0.85);
+                if (battle.omori.emotion === 'AFRAID') baseDmg = Math.floor(baseDmg * 0.75);
+
+                battle.enemy.hp = Math.max(0, battle.enemy.hp - baseDmg);
+                spawnDamagePopup(400 + (Math.random() * 40 - 20), 210, `-${baseDmg}`, '#ef4444');
+                battle.logText = `АНЯ наносит решительный удар! ЧТО-ТО теряет ${baseDmg} ОЗ!`;
+            } else if (actionType === 'SKILL') {
+                const sk = battle.skills[index];
+                battle.omori.juice = Math.max(0, battle.omori.juice - sk.cost);
+
+                if (index === 0) {
+                    // Успокоиться
+                    sound.playHeal();
+                    const heal = 35;
+                    battle.omori.hp = Math.min(battle.omori.maxHp, battle.omori.hp + heal);
+                    battle.omori.emotion = 'NEUTRAL';
+                    player.emotion = 'NEUTRAL';
+                    spawnDamagePopup(150, 410, `+${heal}`, '#4ade80');
+                    battle.logText = 'АНЯ делает глубокий вдох и улыбается. СЕРДЦА восстановлены!';
+                } else if (index === 1) {
+                    // Печальный стих
+                    sound.playHeal();
+                    battle.omori.emotion = 'SAD';
+                    player.emotion = 'SAD';
+                    battle.logText = 'АНЯ вспоминает грустную мелодию... Защита выросла.';
+                } else if (index === 2) {
+                    // Яростный выпад
+                    sound.playSlash();
+                    battle.slashAnim = 22;
+                    battle.enemy.shake = 22;
+                    battle.omori.emotion = 'ANGRY';
+                    player.emotion = 'ANGRY';
+                    const dmg = 78 + Math.floor(Math.random() * 15);
+                    battle.enemy.hp = Math.max(0, battle.enemy.hp - dmg);
+                    spawnDamagePopup(400, 200, `-${dmg}!`, '#f97316');
+                    battle.logText = `АНЯ собирает всю решимость! Стремительный двойной разрез наносит ${dmg} урона!`;
+                } else if (index === 3) {
+                    // Пристальный взгляд
+                    sound.playConfirm();
+                    battle.enemy.shake = 20;
+                    const dmg = 75;
+                    battle.enemy.hp = Math.max(0, battle.enemy.hp - dmg);
+                    spawnDamagePopup(400, 195, `-${dmg}`, '#38bdf8');
+                    battle.logText = `АНЯ бесстрашно смотрит прямо в глаза Тьме! Нанесено ${dmg} урона!`;
+                }
+            } else if (actionType === 'SNACK') {
+                const item = battle.snacks[index];
+                item.count--;
+                sound.playHeal();
+                if (item.type === 'hp') {
+                    battle.omori.hp = Math.min(battle.omori.maxHp, battle.omori.hp + item.val);
+                    spawnDamagePopup(150, 410, `+${item.val} ♥`, '#f472b6');
+                } else if (item.type === 'juice') {
+                    battle.omori.juice = Math.min(battle.omori.maxJuice, battle.omori.juice + item.val);
+                    spawnDamagePopup(150, 410, `+${item.val} СОК`, '#22d3ee');
+                } else {
+                    battle.omori.hp = battle.omori.maxHp;
+                    battle.omori.juice = battle.omori.maxJuice;
+                    spawnDamagePopup(150, 410, `МАКС!`, '#4ade80');
+                }
+                battle.logText = `АНЯ использует «${item.name}»! Силы возвращаются.`;
+            } else if (actionType === 'TOY') {
+                const toy = battle.toys[index];
+                toy.count--;
+                if (toy.type === 'calm') {
+                    sound.playHeal();
+                    battle.omori.emotion = 'NEUTRAL';
+                    player.emotion = 'NEUTRAL';
+                    battle.omori.hp = Math.min(battle.omori.maxHp, battle.omori.hp + 20);
+                    battle.logText = 'Пушинки белого одуванчика разлетаются в темноте. Страх отступает.';
+                } else {
+                    sound.playConfirm();
+                    battle.enemy.shake = 25;
+                    const dmg = 85;
+                    battle.enemy.hp = Math.max(0, battle.enemy.hp - dmg);
+                    spawnDamagePopup(400, 200, `-${dmg}`, '#fde047');
+                    battle.logText = `Звучит тёплый аккорд пианино! Тьма отступает (-${dmg} ОЗ)!`;
+                }
+            }
+
+            // Проверка на победу и переход к финальному выбору
+            setTimeout(() => {
+                if (battle.enemy.hp <= 0) {
+                    battle.phase = 'FINAL_CHOICE';
+                    battle.choiceIndex = 0;
+                    battle.logText = 'Тень дрожит и распадается, обнажая воспоминание. Что сделает АНЯ?';
+                    return;
+                }
+                executeEnemyTurn();
+            }, 1050);
+        }
+
+        function executeEnemyTurn() {
+            sound.playScare();
+            battle.screenShake = 14;
+            battle.redFlash = 12;
+
+            const attacks = [
+                { text: 'КРАСНЫЕ РУКИ тянутся из темноты!', dmg: 22 },
+                { text: 'ЧТО-ТО шепчет из глубины памяти: «Аня... ты помнишь самое начало?»', dmg: 18, fear: false },
+                { text: 'Тени сгущаются вокруг коврика!', dmg: 25 }
+            ];
+            const atk = attacks[battle.turnCount % attacks.length];
+            let dmg = atk.dmg;
+
+            // Модификаторы эмоций
+            if (battle.omori.emotion === 'SAD') {
+                dmg = Math.floor(dmg * 0.65);
+                battle.omori.juice = Math.max(0, battle.omori.juice - 5);
+            } else if (battle.omori.emotion === 'CALM') {
+                dmg = Math.floor(dmg * 0.75);
+            } else if (battle.omori.emotion === 'ANGRY') {
+                dmg = Math.floor(dmg * 1.15);
+            }
+
+            battle.omori.hp = Math.max(1, battle.omori.hp - dmg);
+            if (atk.fear && battle.omori.emotion === 'NEUTRAL') {
+                battle.omori.emotion = 'AFRAID';
+                player.emotion = 'AFRAID';
+            }
+
+            spawnDamagePopup(140, 425, `-${dmg}`, '#ef4444');
+            battle.logText = `${atk.text} АНЯ теряет ${dmg} СЕРДЕЦ!`;
+
+            setTimeout(() => {
+                battle.phase = 'MENU';
+            }, 1050);
+        }
+
+        /***********************************************************************
+         * ОТРИСОВКА ПЕРСОНАЖЕЙ И ЛОКАЦИЙ (ГЛАВНАЯ ГЕРОИНЯ — АНЯ С ФОТО)
+         ***********************************************************************/
+
+        // Вспомогательная функция рисования 5-конечной звёздочки в карандашном стиле (как на фото Ани)
+        function drawHandStar(cx, cy, r, color = '#231f20', seed = 1) {
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.6;
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            for (let i = 0; i <= 5; i++) {
+                const a = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+                const px = cx + Math.cos(a) * r + boilOffset(seed + i, 0.45);
+                const py = cy + Math.sin(a) * r + boilOffset(seed + i + 10, 0.45);
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Вспомогательная функция рисования маленькой карандашной спиральки (как на деревянном фоне фото)
+        function drawHandSpiral(cx, cy, maxR, color = '#231f20', seed = 1) {
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            const steps = 18;
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const angle = t * Math.PI * 3.5;
+                const r = t * maxR;
+                const px = cx + Math.cos(angle) * r + boilOffset(seed + i, 0.25);
+                const py = cy + Math.sin(angle) * r + boilOffset(seed + i + 7, 0.25);
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Отрисовка спрайта АНИ в мире (4 направления, длинные тёмные волосы, уютный серый полосатый свитер, румянец)
+        function drawOmoriSprite(cx, cy, dir, stepFrame, scale = 1) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(scale, scale);
+
+            const walkBob = (stepFrame === 1 || stepFrame === 3) ? -2.5 : 0;
+            const leftLegOffset = stepFrame === 1 ? -4 : (stepFrame === 3 ? 4 : 0);
+            const rightLegOffset = stepFrame === 1 ? 4 : (stepFrame === 3 ? -4 : 0);
+
+            // Тень под ногами
+            drawSketchCircle(0, 25, 16, 6, 'rgba(0,0,0,0.22)', null, 1, 77);
+
+            ctx.translate(0, walkBob);
+
+            // Задняя часть длинных тёмных волос (видна за плечами и спиной)
+            ctx.fillStyle = '#221f22';
+            ctx.strokeStyle = '#110f12';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(-15, -24);
+            ctx.quadraticCurveTo(-19, -4, -16 + boilOffset(2, 0.6), 9);
+            ctx.lineTo(16 + boilOffset(3, 0.6), 9);
+            ctx.quadraticCurveTo(19, -4, 15, -24);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Ножки и тёмные гольфы/ботиночки
+            ctx.fillStyle = '#fceee2';
+            ctx.strokeStyle = '#181619';
+            ctx.lineWidth = 1.8;
+            // Левая нога
+            ctx.fillRect(-7, 11 + leftLegOffset * 0.5, 5.5, 7);
+            ctx.strokeRect(-7, 11 + leftLegOffset * 0.5, 5.5, 7);
+            ctx.fillStyle = '#1f1d20';
+            ctx.fillRect(-7.5, 16 + leftLegOffset * 0.5, 6, 7);
+
+            // Правая нога
+            ctx.fillStyle = '#fceee2';
+            ctx.fillRect(1.5, 11 + rightLegOffset * 0.5, 5.5, 7);
+            ctx.strokeRect(1.5, 11 + rightLegOffset * 0.5, 5.5, 7);
+            ctx.fillStyle = '#1f1d20';
+            ctx.fillRect(1.5, 16 + rightLegOffset * 0.5, 6, 7);
+
+            // Тёмная юбочка / шорты под свитером
+            ctx.fillStyle = '#27252a';
+            ctx.fillRect(-10, 6, 20, 6);
+            ctx.strokeRect(-10, 6, 20, 6);
+
+            // Рукава уютного серого полосатого свитера
+            const armSwing = (stepFrame === 1 ? 2.5 : (stepFrame === 3 ? -2.5 : 0));
+            ctx.fillStyle = '#c8ccd0';
+            ctx.strokeStyle = '#1f1d20';
+            ctx.lineWidth = 1.8;
+            ctx.fillRect(-15, -9 + armSwing, 5.5, 13);
+            ctx.strokeRect(-15, -9 + armSwing, 5.5, 13);
+            ctx.fillRect(9.5, -9 - armSwing, 5.5, 13);
+            ctx.strokeRect(9.5, -9 - armSwing, 5.5, 13);
+
+            // Полоски на рукавах
+            ctx.fillStyle = '#8b9098';
+            ctx.fillRect(-14.5, -4 + armSwing, 4.5, 3);
+            ctx.fillRect(10, -4 - armSwing, 4.5, 3);
+
+            // Ладошки
+            ctx.fillStyle = '#fceee2';
+            ctx.fillRect(-14.5, 3 + armSwing, 4.5, 3.5);
+            ctx.fillRect(10, 3 - armSwing, 4.5, 3.5);
+
+            // Если в руках Блестящий Нож — рисуем маленький отблеск в правой руке
+            if (flags.hasKnife && currentLocation !== 'REAL_ROOM') {
+                ctx.fillStyle = '#e4e4e7';
+                ctx.strokeStyle = '#181619';
+                ctx.beginPath();
+                ctx.moveTo(13, 3 - armSwing);
+                ctx.lineTo(20, 8 - armSwing);
+                ctx.lineTo(14, 10 - armSwing);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            // Торс: Уютный светло-серый свитер с горизонтальными тёмно-серыми штрихованными полосами (как на рисунке)
+            ctx.fillStyle = '#cfd3d7';
+            ctx.strokeStyle = '#1f1d20';
+            ctx.lineWidth = 2;
+            ctx.fillRect(-11, -10, 22, 17);
+            ctx.strokeRect(-11, -10, 22, 17);
+
+            // Горизонтальные серые полосы со штриховкой на свитере
+            ctx.fillStyle = '#8d929a';
+            ctx.fillRect(-10, -5, 20, 3.5);
+            ctx.fillRect(-10, 1, 20, 3.5);
+
+            // Круглый воротник свитера
+            if (dir !== 'up') {
+                ctx.strokeStyle = '#1f1d20';
+                ctx.lineWidth = 1.6;
+                ctx.beginPath();
+                ctx.arc(0, -10, 5, 0, Math.PI);
+                ctx.stroke();
+            }
+
+            // Голова Ани (тёплый кремовый оттенок кожи с фото)
+            drawSketchCircle(0, -23, 14.5, 13.5, '#fceee2', '#1f1d20', 2.1, 33);
+
+            // Ушки по бокам
+            if (dir === 'down' || dir === 'up') {
+                drawSketchCircle(-14.5, -22, 3.2, 4.2, '#fceee2', '#1f1d20', 1.7, 35);
+                drawSketchCircle(14.5, -22, 3.2, 4.2, '#fceee2', '#1f1d20', 1.7, 36);
+            }
+
+            // Лицо Ани (большие выразительные тёмные глаза с бликами, милый румянец /// и тёплая улыбка)
+            if (dir !== 'up') {
+                let faceShiftX = 0;
+                if (dir === 'left') faceShiftX = -3.2;
+                if (dir === 'right') faceShiftX = 3.2;
+
+                // Большие круглые тёмные глаза
+                ctx.fillStyle = '#1f1c1d';
+                ctx.beginPath();
+                ctx.arc(-5.2 + faceShiftX, -21.5, 2.7, 0, Math.PI * 2);
+                ctx.arc(5.2 + faceShiftX, -21.5, 2.7, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Белые блики в глазах
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(-5.8 + faceShiftX, -22.3, 0.95, 0, Math.PI * 2);
+                ctx.arc(4.6 + faceShiftX, -22.3, 0.95, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Мягкие дужки бровей
+                drawSketchLine(-8 + faceShiftX, -26, -2.5 + faceShiftX, -26.3, '#1f1c1d', 1.4, 41, 2);
+                drawSketchLine(2.5 + faceShiftX, -26.3, 8 + faceShiftX, -26, '#1f1c1d', 1.4, 42, 2);
+
+                // Румянец на щёчках (кораллово-розовые штрихи)
+                ctx.strokeStyle = '#e07a5f';
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.moveTo(-9.5 + faceShiftX, -18);
+                ctx.lineTo(-8.5 + faceShiftX, -16.5);
+                ctx.moveTo(-7.5 + faceShiftX, -18);
+                ctx.lineTo(-6.5 + faceShiftX, -16.5);
+                ctx.moveTo(6.5 + faceShiftX, -18);
+                ctx.lineTo(7.5 + faceShiftX, -16.5);
+                ctx.moveTo(8.5 + faceShiftX, -18);
+                ctx.lineTo(9.5 + faceShiftX, -16.5);
+                ctx.stroke();
+
+                // Мягкая улыбка
+                ctx.strokeStyle = '#1f1c1d';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(0 + faceShiftX, -16.8, 3.2, 0.18 * Math.PI, 0.82 * Math.PI);
+                ctx.stroke();
+            }
+
+            // Длинные тёмные волосы Ани: пышная макушка, чёлка с пробором-галочкой и длинные передние пряди на свитере
+            ctx.fillStyle = '#242124';
+            ctx.strokeStyle = '#141214';
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(-15.5 + boilOffset(1, 0.5), -23);
+            ctx.quadraticCurveTo(-16, -39, 0, -39.5 + boilOffset(2, 0.5));
+            ctx.quadraticCurveTo(16, -39, 15.5 + boilOffset(3, 0.5), -23);
+
+            if (dir === 'up') {
+                // Вид сзади: длинные струящиеся волосы до середины спины
+                ctx.lineTo(17, 5);
+                ctx.lineTo(11, 7);
+                ctx.lineTo(5, 5);
+                ctx.lineTo(0, 8);
+                ctx.lineTo(-5, 5);
+                ctx.lineTo(-11, 7);
+                ctx.lineTo(-17, 5);
+            } else {
+                // Длинная правая прядь, ниспадающая на свитер
+                ctx.lineTo(16.5, 4);
+                ctx.lineTo(11.5, 5);
+                ctx.lineTo(11, -18);
+                // Чёлка с фирменной центральной прядью между глаз (как на фото)
+                ctx.lineTo(8, -25);
+                ctx.lineTo(4, -22);
+                ctx.lineTo(2, -28);
+                ctx.lineTo(0, -21);
+                ctx.lineTo(-2.5, -28);
+                ctx.lineTo(-5, -22);
+                ctx.lineTo(-9, -25);
+                // Длинная левая прядь, ниспадающая на свитер
+                ctx.lineTo(-11, -18);
+                ctx.lineTo(-11.5, 5);
+                ctx.lineTo(-16.5, 4);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Фирменный маленький завиток-прядка на макушке справа (как на присланном рисунке)
+            ctx.strokeStyle = '#242124';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(2, -39);
+            ctx.quadraticCurveTo(6, -44 + boilOffset(6, 0.6), 10, -41);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // Отрисовка детализированного портрета АНИ по присланному рисунку (для меню, диалогов и боя)
+        function drawAnyaDetailedPortrait(x, y, size, emotion) {
+            ctx.save();
+            const scale = size / 150;
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+
+            // 1. ФОН ПОРТРЕТА: Тёплые деревянные доски со штриховкой, спиралями и звёздочками (или фон эмоции в бою)
+            if (emotion === 'NEUTRAL' || emotion === 'CALM') {
+                // Тёплая кремовая бумага
+                ctx.fillStyle = '#fbf6ee';
+                ctx.fillRect(0, 0, 150, 150);
+
+                // Деревянные вертикальные доски (золотисто-охристые оттенки как на рисунке)
+                const planks = [
+                    { x: 6,   w: 28, c: '#dfae6c' },
+                    { x: 34,  w: 27, c: '#e7bd82' },
+                    { x: 61,  w: 31, c: '#d8a15a' },
+                    { x: 92,  w: 27, c: '#e5b879' },
+                    { x: 119, w: 25, c: '#db9f56' }
+                ];
+                planks.forEach((p, idx) => {
+                    ctx.fillStyle = p.c;
+                    ctx.fillRect(p.x, 6, p.w, 138);
+
+                    // Диагональная карандашная штриховка по дереву
+                    ctx.strokeStyle = 'rgba(166, 104, 41, 0.36)';
+                    ctx.lineWidth = 1.3;
+                    for (let hy = 10; hy < 144; hy += 7) {
+                        ctx.beginPath();
+                        ctx.moveTo(p.x + 2, hy + ((idx * 3) % 5));
+                        ctx.lineTo(p.x + p.w - 2, hy - 8 + ((idx * 3) % 5));
+                        ctx.stroke();
+                    }
+                });
+
+                // Вертикальные тёмно-коричневые линии стыков досок
+                ctx.strokeStyle = '#3b2d23';
+                ctx.lineWidth = 1.5;
+                [34, 61, 92, 119].forEach((lx, i) => {
+                    drawSketchLine(lx, 6, lx, 144, '#3b2d23', 1.4, 700 + i, 4);
+                });
+
+                // Древесные сучки-спирали на боковых досках (как на фото)
+                drawHandSpiral(21, 56, 7.5, '#8c5828', 710);
+                drawHandSpiral(127, 46, 8.5, '#8c5828', 720);
+
+                // Звёздочки ☆, завитки и двойные штрихи // вокруг Ани (как на оригинальном арте)
+                drawHandStar(20, 38, 5.5, '#2b2420', 730);
+                drawHandStar(133, 74, 6.2, '#2b2420', 735);
+                drawHandStar(136, 98, 4.5, '#2b2420', 740);
+                drawHandStar(16, 102, 4.2, '#2b2420', 745);
+
+                drawHandSpiral(31, 29, 4.5, '#2b2420', 750);
+                drawHandSpiral(18, 84, 4.8, '#2b2420', 755);
+                drawHandSpiral(138, 86, 3.6, '#2b2420', 760);
+
+                // Маленькие парные карандашные штрихи // сверху
+                drawSketchLine(23, 16, 28, 11, '#2b2420', 1.6, 770, 2);
+                drawSketchLine(26, 19, 31, 14, '#2b2420', 1.6, 771, 2);
+                drawSketchLine(118, 14, 124, 19, '#2b2420', 1.6, 772, 2);
+                drawSketchLine(122, 11, 128, 16, '#2b2420', 1.6, 773, 2);
+            } else if (emotion === 'SAD') {
+                ctx.fillStyle = '#102042';
+                ctx.fillRect(0, 0, 150, 150);
+                ctx.strokeStyle = '#60a5fa';
+                ctx.lineWidth = 1.6;
+                for (let i = 0; i < 9; i++) {
+                    const rx = 16 + ((i * 19 + boilFrame * 7) % 118);
+                    const ry = 12 + ((i * 29 + boilFrame * 17) % 120);
+                    ctx.beginPath();
+                    ctx.moveTo(rx, ry);
+                    ctx.lineTo(rx, ry + 11);
+                    ctx.stroke();
+                }
+            } else if (emotion === 'ANGRY') {
+                ctx.fillStyle = '#3b0a0f';
+                ctx.fillRect(0, 0, 150, 150);
+                for (let i = 0; i < 7; i++) {
+                    const yLine = 16 + i * 18 + boilOffset(i * 9, 4);
+                    drawSketchLine(8, yLine, 142, yLine + boilOffset(i, 6), '#ef4444', 1.8, i + 20, 3);
+                }
+            } else if (emotion === 'AFRAID') {
+                ctx.fillStyle = '#09090d';
+                ctx.fillRect(0, 0, 150, 150);
+                for (let i = 0; i < 12; i++) {
+                    const col = i % 2 === 0 ? 'rgba(239,68,68,0.42)' : 'rgba(255,255,255,0.22)';
+                    drawSketchLine(
+                        (i * 23 + boilFrame * 19) % 150,
+                        (i * 11) % 150,
+                        (i * 41 + boilFrame * 29) % 150,
+                        (i * 37 + 50) % 150,
+                        col,
+                        1.5,
+                        i * 5,
+                        2
+                    );
+                }
+            }
+
+            const jitX = emotion === 'AFRAID' ? boilOffset(99, 2.2) : boilOffset(99, 0.55);
+            const jitY = emotion === 'AFRAID' ? boilOffset(101, 2.2) : boilOffset(101, 0.55);
+            ctx.translate(75 + jitX, 82 + jitY);
+
+            // 2. ЗАДНЯЯ МАССА ДЛИННЫХ ТЁМНЫХ ВОЛОС (доходит до низа портрета)
+            ctx.fillStyle = '#232023';
+            ctx.strokeStyle = '#121012';
+            ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            ctx.moveTo(-42, -22);
+            ctx.bezierCurveTo(-48, 8, -50, 38, -46, 62);
+            ctx.lineTo(46, 62);
+            ctx.bezierCurveTo(50, 38, 48, 8, 42, -22);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // 3. ШЕЯ И УЮТНЫЙ СВЕТЛО-СЕРЫЙ ПОЛОСАТЫЙ СВИТЕР СО ШТРИХОВКОЙ
+            // Шея с мягкой карандашной тенью под подбородком
+            ctx.fillStyle = '#fceee2';
+            ctx.strokeStyle = '#231f20';
+            ctx.lineWidth = 2;
+            ctx.fillRect(-10, 10, 20, 18);
+            ctx.strokeRect(-10, 10, 20, 18);
+
+            // Диагональная карандашная тень на шее (как на рисунке)
+            ctx.fillStyle = 'rgba(35, 31, 32, 0.75)';
+            ctx.beginPath();
+            ctx.moveTo(-9, 13);
+            ctx.lineTo(8, 13);
+            ctx.lineTo(-2, 22);
+            ctx.lineTo(-9, 21);
+            ctx.closePath();
+            ctx.fill();
+
+            // Основной силуэт серого свитера
+            ctx.fillStyle = '#cfd3d7';
+            ctx.strokeStyle = '#231f20';
+            ctx.lineWidth = 2.3;
+            ctx.beginPath();
+            ctx.moveTo(-52, 65);
+            ctx.quadraticCurveTo(-48, 30, -24, 23);
+            ctx.quadraticCurveTo(0, 29, 24, 23);
+            ctx.quadraticCurveTo(48, 30, 52, 65);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Ребристый круглый воротник свитера
+            ctx.fillStyle = '#c2c7cc';
+            ctx.beginPath();
+            ctx.moveTo(-16, 22);
+            ctx.quadraticCurveTo(0, 32, 16, 22);
+            ctx.quadraticCurveTo(0, 38, -16, 22);
+            ctx.fill();
+            ctx.stroke();
+
+            // Горизонтальные тёмно-серые полосы на свитере с карандашной штриховкой (как на рисунке)
+            const stripeY = [34, 47, 58];
+            stripeY.forEach((sy, sIdx) => {
+                ctx.fillStyle = '#9298a0';
+                ctx.fillRect(-44, sy, 88, 6.5);
+                ctx.strokeStyle = '#4a4e54';
+                ctx.lineWidth = 1.1;
+                ctx.strokeRect(-44, sy, 88, 6.5);
+                // Вертикально-диагональная штриховка внутри полос свитера
+                for (let hx = -42; hx < 42; hx += 4.5) {
+                    ctx.beginPath();
+                    ctx.moveTo(hx, sy + 1);
+                    ctx.lineTo(hx - 2, sy + 5.5);
+                    ctx.stroke();
+                }
+            });
+
+            // Контуры рукавов и диагональная складочка/ремешок на груди
+            drawSketchLine(-30, 36, -34, 64, '#231f20', 2, 780, 3);
+            drawSketchLine(30, 36, 34, 64, '#231f20', 2, 781, 3);
+            drawSketchLine(-6, 40, 12, 63, '#52565e', 1.8, 782, 3);
+
+            // 4. УШКИ С ВНУТРЕННИМ КОНТУРОМ
+            drawSketchCircle(-31, -8, 6.5, 8.5, '#fceee2', '#231f20', 2.1, 790);
+            drawSketchCircle(31, -8, 6.5, 8.5, '#fceee2', '#231f20', 2.1, 791);
+            drawSketchLine(-32, -10, -29, -6, '#231f20', 1.4, 792, 2);
+            drawSketchLine(32, -10, 29, -6, '#231f20', 1.4, 793, 2);
+
+            // 5. ЛИЦО АНИ (мягкий овальный контур с нежным подбородком)
+            ctx.fillStyle = '#fceee2';
+            ctx.strokeStyle = '#231f20';
+            ctx.lineWidth = 2.3;
+            ctx.beginPath();
+            ctx.moveTo(-29, -16);
+            ctx.bezierCurveTo(-30, 4, -15, 15, 0, 16 + boilOffset(794, 0.4));
+            ctx.bezierCurveTo(15, 15, 30, 4, 29, -16);
+            ctx.bezierCurveTo(29, -36, -29, -36, -29, -16);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // 6. ГЛАЗА, РЕСНИЦЫ, БРОВИ, НОСИК, РУМЯНЕЦ /// И УЛЫБКА (в точности с фото)
+            if (emotion === 'AFRAID') {
+                // Взволнованные глаза
+                drawSketchCircle(-12, -8, 6.5, 7.2, '#ffffff', '#231f20', 2, 800);
+                drawSketchCircle(12, -8, 6.5, 7.2, '#ffffff', '#231f20', 2, 801);
+                ctx.fillStyle = '#1f1c1d';
+                ctx.beginPath();
+                ctx.arc(-12 + boilOffset(1, 0.8), -8, 3.2, 0, Math.PI * 2);
+                ctx.arc(12 + boilOffset(2, 0.8), -8, 3.2, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                // Белки глаз
+                drawSketchCircle(-12.5, -8, 7.2, 7.0, '#ffffff', '#231f20', 1.8, 802);
+                drawSketchCircle(12.5, -8, 7.2, 7.0, '#ffffff', '#231f20', 1.8, 803);
+
+                // Большие круглые тёмно-карие/чёрные радужки (как на рисунке)
+                ctx.fillStyle = '#1e1b1c';
+                ctx.beginPath();
+                ctx.arc(-12, -7.8, 5.5, 0, Math.PI * 2);
+                ctx.arc(12, -7.8, 5.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Густые верхние реснички с изящными внешними уголками
+                ctx.strokeStyle = '#181516';
+                ctx.lineWidth = 3.0;
+                ctx.beginPath();
+                ctx.arc(-12.5, -7.5, 7.4, Math.PI * 1.08, Math.PI * 1.92);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(12.5, -7.5, 7.4, Math.PI * 1.08, Math.PI * 1.92);
+                ctx.stroke();
+
+                // Тонкая складочка верхнего века над каждым глазом
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.arc(-12.5, -9.5, 7.2, Math.PI * 1.18, Math.PI * 1.82);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(12.5, -9.5, 7.2, Math.PI * 1.18, Math.PI * 1.82);
+                ctx.stroke();
+
+                // Яркие белые блики в глазах
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(-13.8, -9.6, 1.9, 0, Math.PI * 2);
+                ctx.arc(10.8, -9.6, 1.9, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(-10.2, -6.2, 0.9, 0, Math.PI * 2);
+                ctx.arc(14.2, -6.2, 0.9, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Брови
+            if (emotion === 'ANGRY') {
+                drawSketchLine(-19, -20, -6, -16, '#231f20', 2.4, 810, 2);
+                drawSketchLine(6, -16, 19, -20, '#231f20', 2.4, 811, 2);
+            } else if (emotion === 'SAD') {
+                drawSketchLine(-19, -16, -6, -20, '#231f20', 2.2, 812, 2);
+                drawSketchLine(6, -20, 19, -16, '#231f20', 2.2, 813, 2);
+            } else {
+                drawSketchLine(-19, -18, -6, -19.2, '#231f20', 2.1, 814, 2);
+                drawSketchLine(6, -19.2, 19, -18, '#231f20', 2.1, 815, 2);
+            }
+
+            // Маленький аккуратный носик-капелька по центру
+            ctx.fillStyle = '#231f20';
+            ctx.beginPath();
+            ctx.arc(0, -1.2, 1.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Фирменный кораллово-персиковый румянец с 3 диагональными штрихами /// на каждой щёчке (как на фото)
+            ctx.fillStyle = 'rgba(244, 143, 114, 0.28)';
+            ctx.beginPath();
+            ctx.ellipse(-16.5, 1.2, 6.5, 3.2, 0, 0, Math.PI * 2);
+            ctx.ellipse(16.5, 1.2, 6.5, 3.2, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#3a2622';
+            ctx.lineWidth = 1.25;
+            [-19.5, -16.5, -13.5].forEach((bx) => {
+                ctx.beginPath();
+                ctx.moveTo(bx + 1.4, -0.4);
+                ctx.lineTo(bx, 2.5);
+                ctx.stroke();
+            });
+            [13.5, 16.5, 19.5].forEach((bx) => {
+                ctx.beginPath();
+                ctx.moveTo(bx + 1.4, -0.4);
+                ctx.lineTo(bx, 2.5);
+                ctx.stroke();
+            });
+
+            // Улыбка (с нежным тёплым бликом нижней губы, как на рисунке)
+            if (emotion === 'SAD') {
+                drawSketchLine(-5, 8, 5, 7, '#231f20', 2, 820, 2);
+            } else if (emotion === 'AFRAID') {
+                drawSketchCircle(0, 7.5, 3.2, 2.5, '#231f20', '#231f20', 1.5, 821);
+            } else {
+                // Тёплый персиковый оттенок под линией улыбки
+                ctx.strokeStyle = '#f3a683';
+                ctx.lineWidth = 2.6;
+                ctx.beginPath();
+                ctx.arc(0, 4.5, 6.2, 0.22 * Math.PI, 0.78 * Math.PI);
+                ctx.stroke();
+
+                // Основная линия мягкой улыбки Ани
+                ctx.strokeStyle = '#231f20';
+                ctx.lineWidth = 2.0;
+                ctx.beginPath();
+                ctx.arc(0, 3.8, 6.5, 0.18 * Math.PI, 0.82 * Math.PI);
+                ctx.stroke();
+            }
+
+            // 7. ЧЁЛКА И ПЕРЕДНИЕ ДЛИННЫЕ ПРЯДИ ВОЛОС НА ПЛЕЧАХ И СВИТЕРЕ (с карандашной текстурой)
+            ctx.fillStyle = '#262326';
+            ctx.strokeStyle = '#141214';
+            ctx.lineWidth = 2.0;
+
+            // Левая длинная прядь, ниспадающая поверх свитера
+            ctx.beginPath();
+            ctx.moveTo(-29, -22);
+            ctx.bezierCurveTo(-39, -2, -41, 28, -32, 54);
+            ctx.lineTo(-22, 46);
+            ctx.lineTo(-18, 53);
+            ctx.bezierCurveTo(-15, 30, -18, 8, -24, -10);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Правая длинная прядь, ниспадающая поверх свитера
+            ctx.beginPath();
+            ctx.moveTo(29, -22);
+            ctx.bezierCurveTo(39, -2, 41, 28, 32, 54);
+            ctx.lineTo(22, 46);
+            ctx.lineTo(18, 53);
+            ctx.bezierCurveTo(15, 30, 18, 8, 24, -10);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Верхний купол волос и пышная чёлка с пробором и центральной V-прядью между глаз (как на фото)
+            ctx.beginPath();
+            ctx.moveTo(-36, -12);
+            ctx.bezierCurveTo(-40, -45, -15, -56, 4, -54 + boilOffset(830, 0.8));
+            ctx.bezierCurveTo(24, -53, 39, -40, 36, -12);
+            // Переход к прядям чёлки справа налево
+            ctx.lineTo(27, -14);
+            ctx.lineTo(23, -24);
+            ctx.lineTo(16, -15);
+            ctx.lineTo(10, -27);
+            // Центральная характерная треугольная прядь между бровей
+            ctx.lineTo(3, -11);
+            ctx.lineTo(-2, -16);
+            ctx.lineTo(-4, -10);
+            // Левая часть чёлки
+            ctx.lineTo(-7, -28);
+            ctx.lineTo(-14, -15);
+            ctx.lineTo(-22, -23);
+            ctx.lineTo(-27, -13);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Светло-серые карандашные штрихи текстуры волос (придают живой рисованный объём как на фото)
+            ctx.strokeStyle = 'rgba(160, 155, 162, 0.38)';
+            ctx.lineWidth = 1.3;
+            for (let i = -24; i <= 24; i += 6) {
+                ctx.beginPath();
+                ctx.moveTo(i * 0.5, -48);
+                ctx.quadraticCurveTo(i * 1.1, -34, i * 1.15, -20);
+                ctx.stroke();
+            }
+            // Штрихи на длинных боковых локонах
+            [-31, -27, -23, 23, 27, 31].forEach((lx) => {
+                ctx.beginPath();
+                ctx.moveTo(lx, -6);
+                ctx.lineTo(lx + (lx < 0 ? -2 : 2), 42);
+                ctx.stroke();
+            });
+
+            // Фирменная торчащая прядка-хохолок справа сверху на макушке (как на фото)
+            ctx.strokeStyle = '#181518';
+            ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            ctx.moveTo(6, -53);
+            ctx.quadraticCurveTo(13, -61 + boilOffset(840, 0.8), 19, -56);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // Отрисовка детализированного портрета пёсика БАТОНА в точности по присланной фотографии
+        function drawBatonDetailedPortrait(x, y, size) {
+            ctx.save();
+            const scale = size / 150;
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+
+            // 1. Тёплый кремово-жёлтый бумажный фон с карандашной рамкой, звёздочками ☆ и спиралями @ (как на фото Батона)
+            ctx.fillStyle = '#f8e6bd';
+            ctx.fillRect(0, 0, 150, 150);
+
+            // Внутренняя двойная рисованная рамка открытки
+            ctx.strokeStyle = '#2b221e';
+            ctx.lineWidth = 1.6;
+            ctx.strokeRect(5, 5, 140, 140);
+            ctx.lineWidth = 0.9;
+            ctx.strokeRect(7.5, 7.5, 135, 135);
+
+            // Звёздочки ☆, спиральки @ и штрихи вокруг Батона (как на оригинальном рисунке)
+            drawHandStar(18, 20, 6.2, '#2b221e', 901);
+            drawHandStar(14, 34, 3.8, '#2b221e', 902);
+            drawHandStar(118, 17, 4.5, '#2b221e', 903);
+            drawHandStar(131, 66, 5.8, '#2b221e', 904);
+            drawHandStar(135, 92, 3.8, '#2b221e', 905);
+            drawHandStar(16, 94, 4.0, '#2b221e', 906);
+            drawHandStar(19, 108, 5.5, '#2b221e', 907);
+
+            drawHandSpiral(132, 16, 4.5, '#2b221e', 910);
+            drawHandSpiral(16, 76, 4.5, '#2b221e', 911);
+            drawHandSpiral(135, 79, 3.5, '#2b221e', 912);
+            drawHandSpiral(134, 106, 4.0, '#2b221e', 913);
+
+            // Боковые лучики-штрихи у щёк Батона
+            drawSketchLine(16, 50, 21, 49, '#2b221e', 1.5, 914, 2);
+            drawSketchLine(16, 55, 21, 55, '#2b221e', 1.5, 915, 2);
+            drawSketchLine(17, 60, 21, 59, '#2b221e', 1.5, 916, 2);
+
+            drawSketchLine(128, 46, 133, 44, '#2b221e', 1.5, 917, 2);
+            drawSketchLine(129, 51, 134, 50, '#2b221e', 1.5, 918, 2);
+            drawSketchLine(128, 56, 133, 56, '#2b221e', 1.5, 919, 2);
+
+            const bx = 76 + boilOffset(920, 0.5);
+            const by = 68 + boilOffset(921, 0.5);
+
+            // 2. ОГРОМНЫЕ ПУШИСТЫЕ УШИ-БАБОЧКИ (как у папийона / длинношёрстного чихуахуа на фото)
+            // Левое большое мохнатое ухо
+            ctx.fillStyle = '#252021';
+            ctx.strokeStyle = '#181415';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(bx - 16, by - 22);
+            ctx.lineTo(bx - 30, by - 46);
+            ctx.lineTo(bx - 48, by - 49 + boilOffset(922, 0.8));
+            ctx.lineTo(bx - 52, by - 36);
+            ctx.lineTo(bx - 47, by - 20);
+            ctx.lineTo(bx - 38, by - 12);
+            ctx.lineTo(bx - 24, by - 8);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Внутренняя бежево-золотистая часть левого уха со штриховкой шерсти
+            ctx.fillStyle = '#cda274';
+            ctx.beginPath();
+            ctx.moveTo(bx - 20, by - 17);
+            ctx.lineTo(bx - 36, by - 37);
+            ctx.lineTo(bx - 42, by - 26);
+            ctx.lineTo(bx - 27, by - 12);
+            ctx.closePath();
+            ctx.fill();
+
+            // Пушистые очёсы по краям левого уха
+            for (let i = 0; i < 6; i++) {
+                drawSketchLine(bx - 28 - i * 3.5, by - 22 - i * 4, bx - 53 + i * 1.5, by - 16 - i * 5.5, '#1f1a1b', 1.7, 925 + i, 2);
+            }
+
+            // Правое большое мохнатое ухо
+            ctx.fillStyle = '#252021';
+            ctx.beginPath();
+            ctx.moveTo(bx + 14, by - 22);
+            ctx.lineTo(bx + 28, by - 46);
+            ctx.lineTo(bx + 49, by - 48 + boilOffset(923, 0.8));
+            ctx.lineTo(bx + 51, by - 33);
+            ctx.lineTo(bx + 45, by - 18);
+            ctx.lineTo(bx + 36, by - 10);
+            ctx.lineTo(bx + 22, by - 8);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Внутренняя бежево-золотистая часть правого уха
+            ctx.fillStyle = '#cda274';
+            ctx.beginPath();
+            ctx.moveTo(bx + 18, by - 17);
+            ctx.lineTo(bx + 35, by - 36);
+            ctx.lineTo(bx + 41, by - 24);
+            ctx.lineTo(bx + 25, by - 12);
+            ctx.closePath();
+            ctx.fill();
+
+            for (let i = 0; i < 6; i++) {
+                drawSketchLine(bx + 26 + i * 3.5, by - 22 - i * 4, bx + 52 - i * 1.5, by - 15 - i * 5.5, '#1f1a1b', 1.7, 932 + i, 2);
+            }
+
+            // 3. ПУШИСТОЕ ЧЁРНО-БЕЛОЕ ТЕЛЬЦЕ И ПЫШНАЯ БЕЛАЯ МАНИШКА НА ГРУДИ
+            // Тёмно-чёрная пушистая спинка и бока со штриховкой
+            ctx.fillStyle = '#282324';
+            ctx.strokeStyle = '#1b1718';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(bx - 25, by + 10);
+            ctx.lineTo(bx - 30, by + 44);
+            ctx.lineTo(bx + 33, by + 44);
+            ctx.lineTo(bx + 39, by + 26);
+            ctx.lineTo(bx + 27, by + 6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Пышный белый воротник-грудка с карандашными зубчиками шерсти
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#231f20';
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(bx - 26, by + 4);
+            ctx.lineTo(bx - 34, by + 9);
+            ctx.lineTo(bx - 27, by + 15);
+            ctx.lineTo(bx - 21, by + 33);
+            ctx.lineTo(bx - 8, by + 45);
+            ctx.lineTo(bx + 10, by + 45);
+            ctx.lineTo(bx + 20, by + 25);
+            ctx.lineTo(bx + 30, by + 13);
+            ctx.lineTo(bx + 24, by + 4);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Мягкие бежевые и серые штрихи пушистой шерсти на грудке
+            ctx.strokeStyle = '#cbb299';
+            ctx.lineWidth = 1.2;
+            [-14, -7, 0, 7, 13].forEach((fx, i) => {
+                ctx.beginPath();
+                ctx.moveTo(bx + fx, by + 14);
+                ctx.lineTo(bx + fx + (i % 2 === 0 ? -2 : 2), by + 27);
+                ctx.stroke();
+            });
+
+            // 4. ПОДНЯТАЯ ВВЕРХ ЛЕВАЯ БЕЛАЯ ЛАПКА С ТЁМНЫМИ ПОДУШЕЧКАМИ (приветственный жест с фото!)
+            const pawWave = Math.sin(Date.now() / 240) * 1.8;
+            ctx.save();
+            ctx.translate(bx - 24, by + 22);
+            ctx.rotate(-0.12 + pawWave * 0.03);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#231f20';
+            ctx.lineWidth = 1.7;
+            ctx.beginPath();
+            ctx.moveTo(4, 6);
+            ctx.quadraticCurveTo(-10, -2, -22, -12);
+            ctx.bezierCurveTo(-28, -16, -24, -24, -17, -21);
+            ctx.quadraticCurveTo(-6, -12, 8, -4);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Округлая ладошка лапки с пальчиками
+            drawSketchCircle(-19, -16, 6.2, 5.5, '#fdf6ee', '#231f20', 1.6, 940);
+
+            // Милые тёмно-коричневые подушечки лапки (toe beans, как на фото!)
+            ctx.fillStyle = '#2a211d';
+            // Главная центральная подушечка
+            ctx.beginPath();
+            ctx.ellipse(-18, -14.2, 2.3, 1.8, -0.3, 0, Math.PI * 2);
+            ctx.fill();
+            // 4 маленьких пальчика-подушечки полукругом сверху
+            [
+                { dx: -22.2, dy: -16.2 },
+                { dx: -20.5, dy: -18.5 },
+                { dx: -17.8, dy: -18.8 },
+                { dx: -15.5, dy: -17.0 }
+            ].forEach((bean) => {
+                ctx.beginPath();
+                ctx.arc(bean.dx, bean.dy, 1.15, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
+
+            // 5. ГОЛОВА БАТОНА (триколор: чёрная шапочка, белая полоска на лбу, бежевые бровки и щёчки)
+            // Основной пушистый чёрный контур головы
+            ctx.fillStyle = '#241f20';
+            ctx.strokeStyle = '#161213';
+            ctx.lineWidth = 1.8;
+            drawSketchCircle(bx - 1, by - 9, 25, 19, '#241f20', '#161213', 1.8, 945);
+
+            // Пушистые щёчки-кисточки по бокам мордочки
+            ctx.beginPath();
+            ctx.moveTo(bx - 23, by - 12);
+            ctx.lineTo(bx - 35, by - 7);
+            ctx.lineTo(bx - 26, by - 3);
+            ctx.lineTo(bx - 33, by + 2);
+            ctx.lineTo(bx - 21, by + 4);
+            ctx.moveTo(bx + 21, by - 12);
+            ctx.lineTo(bx + 34, by - 7);
+            ctx.lineTo(bx + 25, by - 3);
+            ctx.lineTo(bx + 32, by + 2);
+            ctx.lineTo(bx + 20, by + 4);
+            ctx.fill();
+            ctx.stroke();
+
+            // Бежево-рыжие подпалины на щёчках под глазами (триколор окрас с фото)
+            ctx.fillStyle = '#dfb384';
+            ctx.beginPath();
+            ctx.ellipse(bx - 15, by + 1, 8, 4.2, 0.2, 0, Math.PI * 2);
+            ctx.ellipse(bx + 14, by + 1, 8, 4.2, -0.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Вертикальная белая проточина (полоска) по центру лба, переходящая в белую мордочку
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.moveTo(bx - 4.5, by - 28);
+            ctx.lineTo(bx + 3.5, by - 28);
+            ctx.lineTo(bx + 2.5, by - 6);
+            ctx.lineTo(bx - 3.5, by - 6);
+            ctx.closePath();
+            ctx.fill();
+
+            // Округлая белая мордочка
+            drawSketchCircle(bx - 0.5, by - 1, 9.5, 7.8, '#ffffff', '#cbb299', 1.1, 948);
+
+            // Две характерные бежевые «бровки»-пятнышки над глазами (как на фото!)
+            ctx.fillStyle = '#e0b382';
+            ctx.beginPath();
+            ctx.ellipse(bx - 9.5, by - 16.5, 4.2, 2.3, 0.35, 0, Math.PI * 2);
+            ctx.ellipse(bx + 8.5, by - 16.5, 4.2, 2.3, -0.35, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Огромные круглые блестящие тёмные глаза Батона
+            drawSketchCircle(bx - 11.5, by - 8.5, 6.8, 6.8, '#181314', '#ffffff', 1.2, 950);
+            drawSketchCircle(bx + 10.5, by - 8.5, 6.8, 6.8, '#181314', '#ffffff', 1.2, 951);
+
+            // Яркие круглые белые блики в глазах
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(bx - 12.2, by - 9.2, 2.1, 0, Math.PI * 2);
+            ctx.arc(bx + 9.8, by - 9.2, 2.1, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Маленький чёрный носик-пуговка и крошечный приоткрытый ротик треугольничком △
+            ctx.fillStyle = '#181314';
+            ctx.beginPath();
+            ctx.ellipse(bx - 0.5, by - 3.2, 2.6, 1.9, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#181314';
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.moveTo(bx - 2.6, by + 2.2);
+            ctx.lineTo(bx - 0.5, by + 0.5);
+            ctx.lineTo(bx + 1.6, by + 2.2);
+            ctx.closePath();
+            ctx.stroke();
+
+            // 6. ЧЕЛОВЕЧЕСКАЯ ЛАДОНЬ С СЕРЫМ РУКАВОМ СНИЗУ, НА КОТОРОЙ СИДИТ БАТОН (в точности с фото!)
+            // Тёплая бежево-персиковая ладонь, поддерживающая Батона
+            ctx.fillStyle = '#fce0c5';
+            ctx.strokeStyle = '#231f20';
+            ctx.lineWidth = 1.9;
+            ctx.beginPath();
+            ctx.moveTo(30, 122);
+            ctx.quadraticCurveTo(48, 108, 62, 111);
+            // Большой палец с ноготком спереди
+            ctx.lineTo(90, 116);
+            ctx.bezierCurveTo(96, 116, 96, 123, 89, 124);
+            ctx.lineTo(72, 125);
+            // Изгиб к пальцам справа, поддерживающим спинку Батона
+            ctx.quadraticCurveTo(98, 122, 117, 102);
+            ctx.bezierCurveTo(121, 98, 125, 102, 121, 109);
+            ctx.quadraticCurveTo(110, 129, 92, 136);
+            ctx.lineTo(54, 137);
+            ctx.lineTo(44, 142);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Ноготок на большом пальце руки
+            ctx.strokeStyle = '#231f20';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.strokeRect(88, 117.5, 4.5, 4.2);
+
+            // Серый заштрихованный манжет рукава в левом нижнем углу
+            ctx.fillStyle = '#b4b6ba';
+            ctx.strokeStyle = '#231f20';
+            ctx.lineWidth = 1.9;
+            ctx.beginPath();
+            ctx.moveTo(8, 132);
+            ctx.lineTo(31, 118);
+            ctx.lineTo(50, 141);
+            ctx.lineTo(22, 145);
+            ctx.lineTo(8, 145);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // Отрисовка пёсика БАТОНА в Белом Пространстве (оверворлд-спрайт)
+        function drawBatonOverworld(x, y) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            // Мягкая тень на коврике
+            drawSketchCircle(0, 16, 20, 7, 'rgba(0,0,0,0.16)', null, 1, 960);
+
+            // Ладонь-подушечка под Батоном
+            drawSketchCircle(0, 11, 18, 7, '#fce0c5', '#181415', 1.6, 961);
+
+            // Пушистый виляющий хвостик справа
+            const tailWag = Math.sin(Date.now() / 190) * 5;
+            drawSketchLine(13, 4, 24, -5 + tailWag, '#231f20', 4, 962, 3);
+            drawSketchLine(14, 4, 23, -3 + tailWag, '#ffffff', 2, 963, 2);
+
+            // Чёрно-белое пушистое тельце и белая грудка
+            drawSketchCircle(0, 3, 14, 11, '#231f20', '#181415', 1.8, 964);
+            drawSketchCircle(-1, 5, 10, 8.5, '#ffffff', '#231f20', 1.4, 965);
+
+            // Поднятая белая приветственная лапка слева с тёмной подушечкой
+            const waveY = Math.sin(Date.now() / 220) * 2;
+            drawSketchCircle(-15, -1 + waveY, 4.5, 3.8, '#ffffff', '#231f20', 1.5, 966);
+            ctx.fillStyle = '#2a211d';
+            ctx.beginPath();
+            ctx.arc(-15.5, -1 + waveY, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Огромные пушистые уши-бабочки
+            ctx.fillStyle = '#231f20';
+            ctx.strokeStyle = '#141112';
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            // Левое ухо
+            ctx.moveTo(-7, -12);
+            ctx.lineTo(-22, -26 + boilOffset(967, 0.7));
+            ctx.lineTo(-24, -14);
+            ctx.lineTo(-12, -5);
+            // Правое ухо
+            ctx.moveTo(7, -12);
+            ctx.lineTo(22, -26 + boilOffset(968, 0.7));
+            ctx.lineTo(24, -14);
+            ctx.lineTo(12, -5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Бежевая серединка ушей
+            ctx.fillStyle = '#cda274';
+            ctx.beginPath();
+            ctx.arc(-15, -15, 3.5, 0, Math.PI * 2);
+            ctx.arc(15, -15, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Голова Батона с белой полоской на лбу и бежевыми бровками
+            drawSketchCircle(0, -8, 12, 9.5, '#231f20', '#141112', 1.8, 969);
+            // Белая полоска и мордочка
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(-2, -17, 4, 9);
+            drawSketchCircle(0, -5, 5.2, 4.2, '#ffffff', null, 1, 970);
+
+            // Бежевые бровки и щёчки
+            ctx.fillStyle = '#e0b382';
+            ctx.beginPath();
+            ctx.arc(-5, -12.5, 2, 0, Math.PI * 2);
+            ctx.arc(5, -12.5, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Большие круглые тёмные глазки с белыми бликами
+            ctx.fillStyle = '#141112';
+            ctx.beginPath();
+            ctx.arc(-5.5, -8.5, 3.2, 0, Math.PI * 2);
+            ctx.arc(5.5, -8.5, 3.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(-6.2, -9.2, 1.1, 0, Math.PI * 2);
+            ctx.arc(4.8, -9.2, 1.1, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Чёрный носик
+            ctx.fillStyle = '#141112';
+            ctx.beginPath();
+            ctx.arc(0, -5.8, 1.4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Если Батона погладили — рисуем парящее сердечко над ним
+            if (flags.batonHeartTimer > 0) {
+                flags.batonHeartTimer--;
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 16px "Comfortaa", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('♥', 0, -28 - (60 - flags.batonHeartTimer) * 0.2);
+            }
+
+            ctx.restore();
+        }
+
+        // Отрисовка крупного портрета персонажа в квадратном окне над диалогом, в меню или в бою
+        function drawPortraitBox(x, y, size, portraitType, emotion) {
+            // Основная коробка портрета
+            drawOmoriBox(x, y, size, size, {
+                fill: '#08080a',
+                border: '#ffffff',
+                doubleBorder: true,
+                seed: 88
+            });
+
+            ctx.save();
+            // Обрезка внутри рамки
+            ctx.beginPath();
+            ctx.rect(x + 6, y + 6, size - 12, size - 12);
+            ctx.clip();
+
+            const cx = x + size / 2;
+            const cy = y + size / 2 + 8;
+
+            if (portraitType === 'OMORI' || portraitType === 'SUNNY' || portraitType === 'ANYA') {
+                // Отрисовка портрета Ани с присланной фотографии
+                drawAnyaDetailedPortrait(x + 6, y + 6, size - 12, emotion);
+            } else if (portraitType === 'MEWO' || portraitType === 'BATON') {
+                // Детализированный портрет пёсика БАТОНА с присланной фотографии
+                drawBatonDetailedPortrait(x + 6, y + 6, size - 12);
+            } else if (portraitType === 'SOMETHING' || portraitType === 'SHADOW') {
+                ctx.fillStyle = '#070709';
+                ctx.fillRect(0, y, size, size);
+                // Портрет ЧТО-ТО В ТЕМНОТЕ
+                ctx.save();
+                ctx.translate(cx + boilOffset(55, 2.2), cy + boilOffset(56, 2.2));
+                drawSketchCircle(0, 0, 24, 36, '#050507', '#ffffff', 2, 97);
+                // Один огромный смотрящий глаз
+                drawSketchCircle(0, -6, 13, 9, '#ffffff', '#ef4444', 2, 98);
+                drawSketchCircle(0, -6, 4.5, 4.5, '#050507', '#ffffff', 1.5, 99);
+                ctx.restore();
+            }
+
+            ctx.restore();
+
+            // Плашка эмоции сверху рамки портрета: по умолчанию просто «АНЯ»
+            const emotionLabels = {
+                NEUTRAL: { text: 'АНЯ',       bg: '#18181b', border: '#ffffff' },
+                CALM:    { text: 'СПОКОЙНАЯ', bg: '#0c4a6e', border: '#38bdf8' },
+                SAD:     { text: 'ГРУСТНАЯ',  bg: '#1e3a8a', border: '#60a5fa' },
+                ANGRY:   { text: 'ЗЛАЯ',      bg: '#7f1d1d', border: '#ef4444' },
+                AFRAID:  { text: 'В УЖАСЕ',   bg: '#450a0a', border: '#f87171' }
+            };
+            const badge = emotionLabels[emotion] || emotionLabels.NEUTRAL;
+            const isBaton = portraitType === 'MEWO' || portraitType === 'BATON';
+            const badgeText = isBaton ? 'БАТОН' : (portraitType === 'SOMETHING' ? 'ЧТО-ТО' : badge.text);
+
+            drawOmoriBox(x + 4, y - 16, size - 8, 24, {
+                fill: badge.bg,
+                border: badge.border,
+                doubleBorder: false,
+                seed: 104,
+                boilAmp: 0.9
+            });
+            ctx.save();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 11px "Comfortaa", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(badgeText, x + size / 2, y - 3);
+            ctx.restore();
+        }
+
+        // Отрисовка ЧТО-ТО В ТЕМНОТЕ (SOMETHING)
+        function drawSomethingEntity(cx, cy, scale = 1, shake = 0) {
+            ctx.save();
+            const sx = shake > 0 ? (Math.random() - 0.5) * shake : boilOffset(11, 2.5);
+            const sy = shake > 0 ? (Math.random() - 0.5) * shake : boilOffset(12, 2.5);
+            ctx.translate(cx + sx, cy + sy);
+            ctx.scale(scale, scale);
+
+            // Внешняя тревожная аура из дрожащих линий
+            for (let i = 0; i < 6; i++) {
+                const radX = 48 + i * 4 + boilOffset(i * 7, 3);
+                const radY = 85 + i * 5 + boilOffset(i * 9, 3);
+                drawSketchCircle(0, 0, radX, radY, null, i % 2 === 0 ? 'rgba(239,68,68,0.28)' : 'rgba(0,0,0,0.45)', 1.5, i * 19);
+            }
+
+            // Вытянутый каплевидный чёрный силуэт с тремя волнистыми «прядьями» внизу
+            ctx.fillStyle = '#050507';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(0, -82 + boilOffset(1, 2));
+            ctx.bezierCurveTo(52, -70, 56, 20, 42, 75 + boilOffset(2, 2));
+            ctx.lineTo(22, 52);
+            ctx.lineTo(6, 82 + boilOffset(3, 2));
+            ctx.lineTo(-10, 52);
+            ctx.lineTo(-28, 78 + boilOffset(4, 2));
+            ctx.bezierCurveTo(-56, 20, -52, -70, 0, -82 + boilOffset(1, 2));
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Единственный огромный глаз в центре с вертикальными линиями вокруг
+            drawSketchCircle(0, -16, 24, 15, '#ffffff', '#050507', 2.5, 201);
+            drawSketchCircle(
+                boilOffset(31, 2.5),
+                -16 + boilOffset(32, 1.8),
+                8.5,
+                8.5,
+                '#050507',
+                '#ef4444',
+                2,
+                202
+            );
+            // Блик в зрачке
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(-2.5, -18.5, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // Отрисовка КРАСНЫХ РУК (Red Hands)
+        function drawRedHand(x, y, angle, scale = 1, seed = 1) {
+            ctx.save();
+            ctx.translate(x + boilOffset(seed, 2), y + boilOffset(seed + 1, 2));
+            ctx.rotate(angle);
+            ctx.scale(scale, scale);
+
+            ctx.fillStyle = '#09090b';
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 2.4;
+
+            // Длинное запястье и ладонь с длинными пальцами
+            ctx.beginPath();
+            ctx.moveTo(-14, 90);
+            ctx.lineTo(-12, 12);
+            // 5 длинных изломанных пальцев
+            ctx.lineTo(-28, -12 + boilOffset(seed + 2, 2));
+            ctx.lineTo(-16, -2);
+            ctx.lineTo(-18, -36 + boilOffset(seed + 3, 2));
+            ctx.lineTo(-6, -8);
+            ctx.lineTo(-2, -44 + boilOffset(seed + 4, 2));
+            ctx.lineTo(6, -8);
+            ctx.lineTo(16, -35 + boilOffset(seed + 5, 2));
+            ctx.lineTo(14, -2);
+            ctx.lineTo(28, -16 + boilOffset(seed + 6, 2));
+            ctx.lineTo(12, 14);
+            ctx.lineTo(14, 90);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        /***********************************************************************
+         * ЛОКАЦИЯ 1: БЕЛОЕ ПРОСТРАНСТВО (WHITE SPACE)
+         ***********************************************************************/
+        function drawWhiteSpace() {
+            // Бесконечный белый фон
+            ctx.fillStyle = '#f8f8f6';
+            ctx.fillRect(0, 0, W, H);
+
+            // Едва заметные карандашные пылинки в пустоте
+            ctx.fillStyle = 'rgba(0,0,0,0.08)';
+            for (let i = 0; i < 18; i++) {
+                const px = (i * 137 + boilFrame * 3) % W;
+                const py = (i * 89 + boilFrame * 2) % H;
+                ctx.fillRect(px, py, 2, 2);
+            }
+
+            // Центральный коврик (прямоугольная зона жизни Омори)
+            const matX = 240, matY = 200, matW = 320, matH = 220;
+            drawOmoriBox(matX, matY, matW, matH, {
+                fill: '#ffffff',
+                border: '#0a0a0d',
+                doubleBorder: true,
+                seed: 15,
+                boilAmp: 1.4
+            });
+
+            // Декоративная бахрома по краям коврика
+            for (let by = matY + 12; by < matY + matH - 8; by += 14) {
+                drawSketchLine(matX - 8, by, matX, by, '#0a0a0d', 1.5, by, 2);
+                drawSketchLine(matX + matW, by, matX + matW + 8, by, '#0a0a0d', 1.5, by + 5, 2);
+            }
+
+            // 1. ПЁСИК БАТОН (сидит на ладони и машет лапкой)
+            drawBatonOverworld(298, 288);
+
+            // 2. НОУТБУК
+            const lapX = 340, lapY = 235;
+            // Основание
+            drawOmoriBox(lapX - 20, lapY, 40, 14, { fill: '#d4d4d8', border: '#0a0a0d', doubleBorder: false, seed: 40, boilAmp: 0.9 });
+            // Экран ноутбука с тёплым статичным шумом
+            drawOmoriBox(lapX - 18, lapY - 22, 36, 22, { fill: '#18181b', border: '#0a0a0d', doubleBorder: false, seed: 41, boilAmp: 0.9 });
+            ctx.fillStyle = boilFrame % 2 === 0 ? '#e4e4e7' : '#a1a1aa';
+            ctx.fillRect(lapX - 13, lapY - 17, 26, 12);
+            drawSketchLine(lapX - 10, lapY - 13, lapX + 8, lapY - 13, '#0a0a0d', 1.4, 42, 2);
+            drawSketchLine(lapX - 10, lapY - 9, lapX + 4, lapY - 9, '#0a0a0d', 1.4, 43, 2);
+
+            // 3. АЛЬБОМ ДЛЯ РИСОВАНИЯ (SKETCHBOOK)
+            const skX = 465, skY = 245;
+            drawOmoriBox(skX - 18, skY - 14, 36, 28, { fill: '#ffffff', border: '#0a0a0d', doubleBorder: false, seed: 50, boilAmp: 1.0 });
+            // Пружинка альбома сверху и маленький рисунок на обложке
+            for (let s = -14; s <= 14; s += 7) {
+                drawSketchLine(skX + s, skY - 17, skX + s, skY - 11, '#0a0a0d', 2, 51 + s, 2);
+            }
+            drawSketchCircle(skX, skY, 7, 7, null, '#ef4444', 1.8, 52);
+
+            // 4. КОРОБКА САЛФЕТОК
+            const tisX = 475, tisY = 325;
+            drawOmoriBox(tisX - 16, tisY - 10, 32, 20, { fill: '#ffffff', border: '#0a0a0d', doubleBorder: false, seed: 60, boilAmp: 0.9 });
+            // Торчащая белая салфетка
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#0a0a0d';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(tisX - 6, tisY - 6);
+            ctx.quadraticCurveTo(tisX - 10, tisY - 24, tisX, tisY - 20 + boilOffset(61, 1.5));
+            ctx.quadraticCurveTo(tisX + 10, tisY - 24, tisX + 6, tisY - 6);
+            ctx.fill();
+            ctx.stroke();
+
+            // 5. БЛЕСТЯЩИЙ НОЖ (появляется после осмотра предметов)
+            if (flags.knifeSpawned && !flags.hasKnife) {
+                const knX = 270, knY = 385;
+                ctx.save();
+                ctx.translate(knX, knY);
+                // Рукоять
+                ctx.fillStyle = '#0a0a0d';
+                ctx.fillRect(-14, -3, 10, 6);
+                // Лезвие
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#0a0a0d';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(-4, -5);
+                ctx.lineTo(16, 0);
+                ctx.lineTo(-4, 5);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                // Пульсирующая звёздочка блеска
+                const glint = 4 + (boilFrame % 3) * 2.5;
+                drawSketchLine(6, -10 - glint, 6, -10 + glint, '#ef4444', 2, 70, 2);
+                drawSketchLine(6 - glint, -10, 6 + glint, -10, '#ef4444', 2, 71, 2);
+                ctx.restore();
+            }
+
+            // 6. БЕЛАЯ ДВЕРЬ С ТЕНЬЮ (появляется после взятия ножа)
+            if (flags.doorSpawned) {
+                const dX = 400, dY = 468;
+                // Длинная слабая тень от двери
+                ctx.fillStyle = 'rgba(0,0,0,0.12)';
+                ctx.beginPath();
+                ctx.moveTo(dX - 24, dY + 12);
+                ctx.lineTo(dX + 24, dY + 12);
+                ctx.lineTo(dX + 44, dY + 64);
+                ctx.lineTo(dX - 44, dY + 64);
+                ctx.closePath();
+                ctx.fill();
+
+                // Полотно Белой Двери
+                drawOmoriBox(dX - 24, dY - 56, 48, 68, {
+                    fill: '#ffffff',
+                    border: '#0a0a0d',
+                    doubleBorder: true,
+                    seed: 75,
+                    boilAmp: 1.1
+                });
+                // Филёнки двери и ручка
+                ctx.strokeStyle = '#0a0a0d';
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(dX - 15, dY - 46, 30, 20);
+                ctx.strokeRect(dX - 15, dY - 18, 30, 20);
+                drawSketchCircle(dX + 14, dY - 21, 3, 3, '#0a0a0d', '#0a0a0d', 1, 76);
+            }
+
+            // Сортировка по Y: рисуем Омори
+            drawOmoriSprite(player.x, player.y, player.dir, player.moving ? player.stepFrame : 0, 1.1);
+
+            // 7. ЧЁРНАЯ ЛАМПОЧКА НА ПРОВОДЕ (свисает сверху поверх сцены)
+            const bulbX = 400, bulbY = 175;
+            // Тень на полу под лампочкой
+            drawSketchCircle(400, 212, 16, 6, 'rgba(0,0,0,0.16)', null, 1, 80);
+            // Длинный чёрный провод с потолка
+            drawSketchLine(bulbX, 0, bulbX, bulbY - 16, '#0a0a0d', 3, 81, 6);
+            // Цоколь
+            ctx.fillStyle = '#27272a';
+            ctx.strokeStyle = '#0a0a0d';
+            ctx.lineWidth = 2;
+            ctx.fillRect(bulbX - 6, bulbY - 18, 12, 8);
+            ctx.strokeRect(bulbX - 6, bulbY - 18, 12, 8);
+            // Колба Чёрной Лампочки
+            drawSketchCircle(bulbX, bulbY, 15, 17, '#050507', '#0a0a0d', 2.5, 82);
+            // Белая спираль внутри тьмы
+            drawSketchLine(bulbX - 4, bulbY - 5, bulbX, bulbY + 4, '#ffffff', 1.5, 83, 2);
+            drawSketchLine(bulbX, bulbY + 4, bulbX + 4, bulbY - 5, '#ffffff', 1.5, 84, 2);
+
+            // Тонкая подсказка прогресса в углу Белого Пространства
+            ctx.save();
+            ctx.fillStyle = '#0a0a0d';
+            ctx.font = 'bold 13px "Comfortaa", sans-serif';
+            ctx.textAlign = 'left';
+            let questHint = `Осмотрено предметов: ${Math.min(3, countInspectedItems())} / 3`;
+            if (flags.knifeSpawned && !flags.hasKnife) questHint = 'Подойди и подними БЛЕСТЯЩИЙ НОЖ [Z]';
+            if (flags.hasKnife) questHint = 'Открой БЕЛУЮ ДВЕРЬ внизу комнаты [Z]';
+            ctx.fillText(`✦ ${questHint}`, 18, 28);
+            ctx.restore();
+        }
+
+        /***********************************************************************
+         * ЛОКАЦИЯ 2: КОРИДОР ВОСПОМИНАНИЙ / СОСЕДНЯЯ КОМНАТА (DREAMWORLD)
+         ***********************************************************************/
+        function drawCorridorLocation() {
+            // Пастельно-пурпурный / тёмно-фиолетовый градиент мира снов, темнеющий к северу (к фотографии)
+            const distToPhoto = Math.max(0, Math.min(1, (player.y - 180) / 320));
+            const grad = ctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, '#12091c');
+            grad.addColorStop(0.5, '#2e1647');
+            grad.addColorStop(1, '#4c2673');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            // Ковровая дорожка Коридора Воспоминаний
+            drawOmoriBox(210, 90, 380, 460, {
+                fill: '#1e1030',
+                border: '#c084fc',
+                doubleBorder: true,
+                seed: 120,
+                boilAmp: 1.5
+            });
+
+            // Шахматный узор пастельных плит в центре
+            ctx.fillStyle = 'rgba(192, 132, 252, 0.08)';
+            for (let y = 110; y < 530; y += 40) {
+                for (let x = 230; x < 570; x += 40) {
+                    if (((x + y) / 40) % 2 === 0) {
+                        ctx.fillRect(x, y, 40, 40);
+                    }
+                }
+            }
+
+            // 1. Белая дверь назад (внизу)
+            drawOmoriBox(400 - 22, 515 - 48, 44, 60, {
+                fill: '#ffffff',
+                border: '#0a0a0d',
+                doubleBorder: true,
+                seed: 125
+            });
+
+            // 2. Силуэты друзей слева (Кел, Обри, Хиро) — пастельно-призрачные фигуры
+            const frX = 265, frY = 340;
+            drawSketchCircle(frX, frY + 14, 34, 10, 'rgba(192,132,252,0.2)', null, 1, 130);
+            // Три призрачных силуэта
+            const offsets = [{ dx: -18, dy: 0 }, { dx: 0, dy: -12 }, { dx: 18, dy: 2 }];
+            offsets.forEach((o, idx) => {
+                drawSketchCircle(frX + o.dx, frY + o.dy - 16, 10, 10, 'rgba(233, 213, 255, 0.25)', '#e9d5ff', 1.8, 131 + idx);
+                drawOmoriBox(frX + o.dx - 8, frY + o.dy - 5, 16, 20, {
+                    fill: 'rgba(233, 213, 255, 0.18)',
+                    border: '#e9d5ff',
+                    doubleBorder: false,
+                    seed: 135 + idx
+                });
+            });
+
+            // 3. Силуэт пианино и окна справа (память о Мари)
+            const piX = 535, piY = 315;
+            drawOmoriBox(piX - 28, piY - 22, 56, 38, {
+                fill: '#09090b',
+                border: '#e9d5ff',
+                doubleBorder: false,
+                seed: 140
+            });
+            // Клавиши пианино
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(piX - 22, piY + 2, 44, 9);
+            for (let k = -18; k <= 18; k += 6) {
+                ctx.fillStyle = '#09090b';
+                ctx.fillRect(piX + k, piY + 2, 3, 5);
+            }
+
+            // 4. ВЫПАВШАЯ ФОТОГРАФИЯ (Polaroid) в луче света вверху коридора
+            const phX = 400, phY = 175;
+            // Луч света сверху
+            const beam = ctx.createRadialGradient(phX, phY, 6, phX, phY, 68);
+            beam.addColorStop(0, 'rgba(255,255,255,0.45)');
+            beam.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = beam;
+            ctx.beginPath();
+            ctx.arc(phX, phY, 68, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Рамка Полароида
+            drawOmoriBox(phX - 16, phY - 18, 32, 36, {
+                fill: '#ffffff',
+                border: '#0a0a0d',
+                doubleBorder: false,
+                seed: 145
+            });
+            ctx.fillStyle = '#18181b';
+            ctx.fillRect(phX - 12, phY - 14, 24, 20);
+
+            // Отрисовка ОМОРИ
+            drawOmoriSprite(player.x, player.y, player.dir, player.moving ? player.stepFrame : 0, 1.1);
+
+            // Если игрок подходит близко к фотографии — по краям экрана тянутся КРАСНЫЕ РУКИ!
+            const coolness = Math.max(0, 1 - distToPhoto);
+            if (coolness > 0.25) {
+                const reach = (coolness - 0.25) * 140;
+                drawRedHand(80 + reach, 150, 1.2, 0.9, 1);
+                drawRedHand(720 - reach, 150, -1.2, 0.9, 10);
+                drawRedHand(90 + reach * 0.8, 340, 1.4, 0.85, 20);
+                drawRedHand(710 - reach * 0.8, 340, -1.4, 0.85, 30);
+
+                // Красная тревожная виньетка
+                ctx.fillStyle = `rgba(220, 38, 38, ${(coolness - 0.25) * 0.28})`;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            ctx.save();
+            ctx.fillStyle = '#f3e8ff';
+            ctx.font = 'bold 13px "Comfortaa", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText('✦ Иди вперёд по коридору и осмотри ВЫПАВШУЮ ФОТОГРАФИЮ [Z]', 18, 28);
+            ctx.restore();
+        }
+
+        /***********************************************************************
+         * ЭКРАН 3: ИНТЕРАКТИВНЫЙ ПРОСМОТР АЛЬБОМА ДЛЯ РИСОВАНИЯ
+         ***********************************************************************/
+        function drawSketchbookModal() {
+            drawWhiteSpace();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
+            ctx.fillRect(0, 0, W, H);
+
+            // Лист альбома по центру
+            const bx = 130, by = 55, bw = 540, bh = 385;
+            drawOmoriBox(bx, by, bw, bh, {
+                fill: '#f8f8f6',
+                border: '#0a0a0d',
+                doubleBorder: true,
+                seed: 210,
+                boilAmp: 1.5
+            });
+
+            // Спираль альбома сверху
+            for (let x = bx + 35; x < bx + bw - 30; x += 28) {
+                drawSketchCircle(x, by, 5, 11, '#18181b', '#0a0a0d', 2, x);
+            }
+
+            const cx = bx + bw / 2;
+            const cy = by + bh / 2;
+
+            // Рисунки на страницах альбома
+            if (sketchbookPage === 0) {
+                // Страница 1: Крупный цветной карандашный портрет пёсика БАТОНА на ладони
+                drawBatonDetailedPortrait(cx - 145, by + 34, 290);
+            } else if (sketchbookPage === 1) {
+                // Страница 2: Портрет Ани в тёплых тонах
+                drawAnyaDetailedPortrait(cx - 145, by + 34, 290, 'NEUTRAL');
+            } else if (sketchbookPage === 2) {
+                // Страница 3: Красные руки вокруг маленькой Ани
+                drawOmoriSprite(cx, cy + 15, 'down', 0, 1.0);
+                drawRedHand(cx - 160, cy - 60, 1.1, 1.1, 40);
+                drawRedHand(cx + 160, cy - 60, -1.1, 1.1, 50);
+                drawRedHand(cx - 150, cy + 80, 1.9, 1.0, 60);
+                drawRedHand(cx + 150, cy + 80, -1.9, 1.0, 70);
+            } else if (sketchbookPage === 3) {
+                // Страница 4: Крупный план ЧТО-ТО В ТЕМНОТЕ
+                drawSomethingEntity(cx, cy + 5, 1.15, 0);
+            }
+
+            // Текстовое описание страницы внизу в стиле OMORI
+            const pageData = sketchbookDrawings[sketchbookPage];
+            drawOmoriBox(60, 455, 680, 125, {
+                fill: '#08080a',
+                border: '#ffffff',
+                doubleBorder: true,
+                seed: 220
+            });
+
+            ctx.save();
+            ctx.fillStyle = '#ef4444';
+            ctx.font = 'bold 15px "Comfortaa", sans-serif';
+            ctx.fillText(`${pageData.title}  (${sketchbookPage + 1} / ${sketchbookDrawings.length})`, 88, 485);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '15px "Comfortaa", sans-serif';
+            wrapText(ctx, pageData.caption, 88, 514, 620, 22);
+
+            ctx.fillStyle = '#a1a1aa';
+            ctx.font = 'bold 12px "Comfortaa", sans-serif';
+            ctx.fillText('◀ [ВЛЕВО / ВПРАВО] Листать страницы   |   [Z / X / ESC] Закрыть альбом', 88, 564);
+            ctx.restore();
+        }
+
+        /***********************************************************************
+         * ЭКРАН 4: ПОЛНОЦЕННАЯ БОЕВАЯ СЦЕНА OMORI
+         ***********************************************************************/
+        function drawBattleScene() {
+            ctx.save();
+            if (battle.screenShake > 0) {
+                ctx.translate((Math.random() - 0.5) * battle.screenShake, (Math.random() - 0.5) * battle.screenShake);
+                battle.screenShake = Math.max(0, battle.screenShake - 1);
+            }
+
+            // Сюрреалистичный тёмно-багровый фон битвы с карандашными спиралями
+            ctx.fillStyle = '#070709';
+            ctx.fillRect(0, 0, W, H);
+
+            // Тревожные фоновые круги и линии
+            for (let r = 60; r < 420; r += 55) {
+                drawSketchCircle(400, 225, r * 1.3, r * 0.85, null, 'rgba(239, 68, 68, 0.16)', 1.5, r);
+            }
+
+            // Парящие Красные Руки по углам боевой арены
+            drawRedHand(95, 175 + Math.sin(Date.now() / 400) * 10, 1.15, 0.95, 11);
+            drawRedHand(705, 175 + Math.cos(Date.now() / 400) * 10, -1.15, 0.95, 22);
+
+            // Враг в центре: ЧТО-ТО В ТЕМНОТЕ
+            const swayY = Math.sin(Date.now() / 500) * 7;
+            drawSomethingEntity(400, 230 + swayY, 1.25, battle.enemy.shake);
+            if (battle.enemy.shake > 0) battle.enemy.shake--;
+
+            // Полоска здоровья врага над ним
+            const eBarW = 240, eBarH = 18, eBarX = 400 - eBarW / 2, eBarY = 92;
+            drawOmoriBox(eBarX - 4, eBarY - 4, eBarW + 8, eBarH + 8, {
+                fill: '#08080a',
+                border: '#ffffff',
+                doubleBorder: false,
+                seed: 301
+            });
+            const hpRatio = Math.max(0, battle.enemy.hp / battle.enemy.maxHp);
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(eBarX, eBarY, eBarW * hpRatio, eBarH);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 12px "Comfortaa", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${battle.enemy.name}  (${battle.enemy.hp} / ${battle.enemy.maxHp})`, 400, eBarY - 10);
+
+            // Анимация удара ножом (красно-белый росчерк)
+            if (battle.slashAnim > 0) {
+                const prog = 1 - battle.slashAnim / 18;
+                drawSketchLine(320, 140, 320 + prog * 160, 140 + prog * 170, '#ffffff', 7, 99, 3);
+                drawSketchLine(320, 140, 320 + prog * 160, 140 + prog * 170, '#ef4444', 3, 100, 3);
+                battle.slashAnim--;
+            }
+
+            // Всплывающие цифры урона / лечения
+            for (let i = battle.floatingDamages.length - 1; i >= 0; i--) {
+                const fd = battle.floatingDamages[i];
+                ctx.save();
+                ctx.font = 'bold 24px "Comfortaa", sans-serif';
+                ctx.fillStyle = '#000000';
+                ctx.fillText(fd.text, fd.x + 2, fd.y + 2);
+                ctx.fillStyle = fd.color;
+                ctx.fillText(fd.text, fd.x, fd.y);
+                ctx.restore();
+                fd.y -= 1.2;
+                fd.timer--;
+                if (fd.timer <= 0) battle.floatingDamages.splice(i, 1);
+            }
+
+            // Верхнее текстовое окно лога боя (в стиле OMORI)
+            drawOmoriBox(40, 14, 720, 56, {
+                fill: '#08080a',
+                border: '#ffffff',
+                doubleBorder: true,
+                seed: 305
+            });
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 15px "Comfortaa", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(battle.logText, 400, 47);
+
+            // Карточка игрока ОМОРИ слева внизу (Портрет + СЕРДЦА + СОК)
+            const cardX = 36, cardY = 390, cardW = 240, cardH = 188;
+            drawOmoriBox(cardX, cardY, cardW, cardH, {
+                fill: '#08080a',
+                border: '#ffffff',
+                doubleBorder: true,
+                seed: 310
+            });
+
+            // Портрет Ани внутри карточки боя
+            drawPortraitBox(cardX + 14, cardY + 24, 102, 'OMORI', battle.omori.emotion);
+
+            // Имя и полоски СЕРДЕЦ (HP) и СОКА (JUICE)
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 16px "Comfortaa", sans-serif';
+            ctx.fillText('АНЯ', cardX + 126, cardY + 38);
+
+            // Полоска СЕРДЦА (HP)
+            ctx.font = 'bold 12px "Comfortaa", sans-serif';
+            ctx.fillStyle = '#f472b6';
+            ctx.fillText(`♥ ${battle.omori.hp}/${battle.omori.maxHp}`, cardX + 126, cardY + 66);
+            ctx.fillStyle = '#27272a';
+            ctx.fillRect(cardX + 126, cardY + 73, 96, 12);
+            ctx.fillStyle = '#ec4899';
+            ctx.fillRect(cardX + 126, cardY + 73, 96 * (battle.omori.hp / battle.omori.maxHp), 12);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(cardX + 126, cardY + 73, 96, 12);
+
+            // Полоска СОК (MP)
+            ctx.fillStyle = '#22d3ee';
+            ctx.fillText(`💧 ${battle.omori.juice}/${battle.omori.maxJuice}`, cardX + 126, cardY + 108);
+            ctx.fillStyle = '#27272a';
+            ctx.fillRect(cardX + 126, cardY + 115, 96, 12);
+            ctx.fillStyle = '#06b6d4';
+            ctx.fillRect(cardX + 126, cardY + 115, 96 * (battle.omori.juice / battle.omori.maxJuice), 12);
+            ctx.strokeRect(cardX + 126, cardY + 115, 96, 12);
+
+            // Подсказка преимущества эмоций
+            ctx.fillStyle = '#a1a1aa';
+            ctx.font = '11px "Comfortaa", sans-serif';
+            ctx.fillText('Эмоции меняют бой', cardX + 18, cardY + 165);
+
+            // Панель действий справа внизу
+            const actX = 294, actY = 390, actW = 470, actH = 188;
+            drawOmoriBox(actX, actY, actW, actH, {
+                fill: '#08080a',
+                border: '#ffffff',
+                doubleBorder: true,
+                seed: 320
+            });
+
+            if (battle.phase === 'MENU' || battle.phase === 'ANIMATING') {
+                // 4 главные кнопки боя OMORI: АТАКА, НАВЫК, ПЕРЕКУС, ИГРУШКИ
+                const labels = [
+                    { title: 'АТАКА', sub: 'Удар блестящим ножом', color: '#ef4444' },
+                    { title: 'НАВЫК', sub: 'Эмоции и умения', color: '#3b82f6' },
+                    { title: 'ПЕРЕКУС', sub: 'Восстановить Сердца/Сок', color: '#eab308' },
+                    { title: 'ИГРУШКИ', sub: 'Особые предметы сна', color: '#22c55e' }
+                ];
+
+                labels.forEach((btn, idx) => {
+                    const col = idx % 2;
+                    const row = Math.floor(idx / 2);
+                    const bx = actX + 20 + col * 220;
+                    const by = actY + 20 + row * 78;
+                    const bw = 208, bh = 66;
+                    const selected = battle.menuIndex === idx && battle.phase === 'MENU';
+
+                    drawOmoriBox(bx, by, bw, bh, {
+                        fill: selected ? '#18181f' : '#0b0b0e',
+                        border: selected ? btn.color : '#ffffff',
+                        doubleBorder: false,
+                        seed: 330 + idx
+                    });
+
+                    ctx.textAlign = 'left';
+                    ctx.fillStyle = selected ? btn.color : '#ffffff';
+                    ctx.font = 'bold 17px "Comfortaa", sans-serif';
+                    ctx.fillText((selected ? '👉 ' : '   ') + btn.title, bx + 14, by + 30);
+
+                    ctx.fillStyle = '#a1a1aa';
+                    ctx.font = '11px "Comfortaa", sans-serif';
+                    ctx.fillText(btn.sub, bx + 16, by + 50);
+                });
+            } else if (battle.phase === 'SUBMENU') {
+                // Подменю навыков / перекуса / игрушек
+                let items = [];
+                if (battle.subMenuType === 'SKILLS') {
+                    items = battle.skills.map(s => ({
+                        label: `${s.name} (${s.cost} СОК)`,
+                        desc: s.desc,
+                        available: battle.omori.juice >= s.cost
+                    }));
+                } else if (battle.subMenuType === 'SNACKS') {
+                    items = battle.snacks.map(s => ({
+                        label: `${s.name} x${s.count}`,
+                        desc: s.desc,
+                        available: s.count > 0
+                    }));
+                } else if (battle.subMenuType === 'TOYS') {
+                    items = battle.toys.map(t => ({
+                        label: `${t.name} x${t.count}`,
+                        desc: t.desc,
+                        available: t.count > 0
+                    }));
+                }
+
+                items.forEach((it, idx) => {
+                    const iy = actY + 26 + idx * 30;
+                    const isSel = battle.subMenuIndex === idx;
+                    ctx.textAlign = 'left';
+                    ctx.font = isSel ? 'bold 14px "Comfortaa", sans-serif' : '14px "Comfortaa", sans-serif';
+                    ctx.fillStyle = !it.available ? '#52525b' : (isSel ? '#ef4444' : '#ffffff');
+                    ctx.fillText((isSel ? '👉 ' : '    ') + it.label, actX + 20, iy);
+                });
+
+                // Описание выбранного пункта и кнопка возврата
+                const currentItem = items[battle.subMenuIndex];
+                if (currentItem) {
+                    drawSketchLine(actX + 16, actY + 142, actX + actW - 16, actY + 142, '#52525b', 1, 350, 3);
+                    ctx.fillStyle = '#d4d4d8';
+                    ctx.font = '12px "Comfortaa", sans-serif';
+                    ctx.fillText(currentItem.desc, actX + 20, actY + 162);
+                    ctx.fillStyle = '#a1a1aa';
+                    ctx.font = 'bold 11px "Comfortaa", sans-serif';
+                    ctx.fillText('[Z] Использовать   |   [X] Назад', actX + 20, actY + 178);
+                }
+            } else if (battle.phase === 'FINAL_CHOICE') {
+                // Сюжетный выбор в конце боя
+                ctx.textAlign = 'left';
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 15px "Comfortaa", sans-serif';
+                ctx.fillText('СЮЖЕТНЫЙ ВЫБОР — ЧТО СДЕЛАЕТ АНЯ?', actX + 22, actY + 34);
+
+                const choices = [
+                    {
+                        title: '1. ПРИНЯТЬ ПРАВДУ И ПРОСНУТЬСЯ',
+                        sub: 'Протянуть руку к воспоминанию и открыть глаза в реальном мире'
+                    },
+                    {
+                        title: '2. ПОДАВИТЬ ВОСПОМИНАНИЕ (БЕЛОЕ ПРОСТРАНСТВО)',
+                        sub: 'Спрятать фотографию и вернуться в вечное забвение Белого Пространства'
+                    }
+                ];
+
+                choices.forEach((ch, idx) => {
+                    const cy = actY + 52 + idx * 62;
+                    const sel = battle.choiceIndex === idx;
+                    drawOmoriBox(actX + 18, cy, actW - 36, 54, {
+                        fill: sel ? '#1f1218' : '#0c0c10',
+                        border: sel ? '#ef4444' : '#ffffff',
+                        doubleBorder: false,
+                        seed: 370 + idx
+                    });
+                    ctx.fillStyle = sel ? '#fde047' : '#ffffff';
+                    ctx.font = 'bold 14px "Comfortaa", sans-serif';
+                    ctx.fillText((sel ? '👉 ' : '   ') + ch.title, actX + 30, cy + 23);
+                    ctx.fillStyle = '#a1a1aa';
+                    ctx.font = '11px "Comfortaa", sans-serif';
+                    ctx.fillText(ch.sub, actX + 34, cy + 42);
+                });
+            }
+
+            if (battle.redFlash > 0) {
+                ctx.fillStyle = `rgba(239, 68, 68, ${battle.redFlash * 0.03})`;
+                ctx.fillRect(0, 0, W, H);
+                battle.redFlash--;
+            }
+
+            ctx.restore();
+        }
+
+        /***********************************************************************
+         * ЭКРАН 5: КОНЦОВКИ И ТИТУЛЬНЫЙ ЭКРАН
+         ***********************************************************************/
+        function drawTitleScreen() {
+            ctx.fillStyle = '#f8f8f6';
+            ctx.fillRect(0, 0, W, H);
+
+            // Тонкая двойная карандашная рамка вокруг экрана
+            drawOmoriBox(24, 24, W - 48, H - 48, {
+                fill: '#f8f8f6',
+                border: '#0a0a0d',
+                doubleBorder: true,
+                seed: 500,
+                boilAmp: 1.5
+            });
+
+            // Свисающая Чёрная Лампочка слева вверху
+            drawSketchLine(88, 24, 88, 128, '#0a0a0d', 3.2, 501, 5);
+            drawSketchCircle(88, 145, 16, 19, '#050507', '#0a0a0d', 2.5, 502);
+            drawSketchLine(84, 141, 88, 149, '#ffffff', 1.5, 503, 2);
+            drawSketchLine(88, 149, 92, 141, '#ffffff', 1.5, 504, 2);
+
+            // Декоративные карандашные звёздочки по углам
+            drawHandStar(695, 78, 9, '#0a0a0d', 505);
+            drawHandStar(720, 125, 6, '#ef4444', 506);
+            drawHandSpiral(675, 130, 7, '#0a0a0d', 507);
+
+            // Верхнее посвящение для Ани (вместо надписи OMORI сверху)
+            drawOmoriBox(128, 44, 544, 118, {
+                fill: '#ffffff',
+                border: '#0a0a0d',
+                doubleBorder: true,
+                seed: 510,
+                boilAmp: 1.2
+            });
+
+            ctx.save();
+            ctx.fillStyle = '#0a0a0d';
+            ctx.font = 'bold 17px "Comfortaa", sans-serif';
+            ctx.textAlign = 'center';
+            const topDedication = 'Сделал для тебя это, потому что знаю, что любишь эту игру, рад стараться ради близких людей, спасибо что ты есть в моей жизни';
+            wrapText(ctx, topDedication, 400, 76, 500, 26);
+
+            ctx.font = 'bold 13px "Comfortaa", sans-serif';
+            ctx.fillStyle = '#ef4444';
+            ctx.fillText('♥ СПЕЦИАЛЬНО ДЛЯ АНИ ♥', 400, 147);
+
+            // Крупный рисованный портрет АНИ в центре титульного экрана со статусом «ПЕРСОНАЖ АНЯ»
+            drawPortraitBox(315, 194, 170, 'OMORI', 'NEUTRAL');
+
+            // Кнопка начала игры
+            drawOmoriBox(245, 392, 310, 56, {
+                fill: '#08080a',
+                border: '#0a0a0d',
+                doubleBorder: true,
+                seed: 520
+            });
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 18px "Comfortaa", sans-serif';
+            const blink = Math.floor(Date.now() / 500) % 2 === 0 ? '👉 ' : '   ';
+            ctx.fillText(`${blink}НАЖМИ [Z] ИЛИ КЛИКНИ`, 400, 426);
+
+            // Нижняя надпись в главном меню по просьбе пользователя
+            drawOmoriBox(160, 476, 480, 58, {
+                fill: '#ffffff',
+                border: '#0a0a0d',
+                doubleBorder: false,
+                seed: 525,
+                boilAmp: 1.0
+            });
+            ctx.fillStyle = '#0a0a0d';
+            ctx.font = 'bold 20px "Comfortaa", sans-serif';
+            ctx.fillText('аня я хорошо запомнил начало', 400, 512);
+            ctx.restore();
+        }
+
+        function drawEndingScreen() {
+            if (flags.endingType === 'ACCEPT') {
+                // Светлая концовка: Утренняя комната в реальном мире, тёплый солнечный свет из окна
+                const grad = ctx.createLinearGradient(0, 0, 0, H);
+                grad.addColorStop(0, '#fef3c7');
+                grad.addColorStop(0.55, '#fde68a');
+                grad.addColorStop(1, '#f59e0b');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, W, H);
+
+                drawOmoriBox(40, 35, W - 80, H - 70, {
+                    fill: 'rgba(255, 251, 235, 0.92)',
+                    border: '#78350f',
+                    doubleBorder: true,
+                    seed: 600
+                });
+
+                // Окно с солнечными лучами и деревом за окном
+                drawOmoriBox(310, 75, 180, 145, {
+                    fill: '#bae6fd',
+                    border: '#78350f',
+                    doubleBorder: true,
+                    seed: 605
+                });
+                drawSketchLine(400, 75, 400, 220, '#78350f', 3, 606, 3);
+                drawSketchLine(310, 147, 490, 147, '#78350f', 3, 607, 3);
+
+                // Портрет проснувшегося героя со спокойной лёгкой улыбкой
+                drawPortraitBox(335, 245, 130, 'SUNNY', 'CALM');
+
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#451a03';
+                ctx.font = 'bold 26px "Comfortaa", sans-serif';
+                ctx.fillText('КОНЦОВКА 1: «ДОБРОЕ УТРО» (ПРАВДА ПРИНЯТА)', 400, 418);
+
+                ctx.font = '15px "Comfortaa", sans-serif';
+                ctx.fillStyle = '#78350f';
+                ctx.fillText('Чёрная лампочка погасла. Тёплый утренний свет наполнил комнату.', 400, 452);
+                ctx.fillText('Прошлое больше не прячется в темноте — и ты наконец можешь идти дальше.', 400, 478);
+
+                drawOmoriBox(250, 500, 300, 46, {
+                    fill: '#08080a',
+                    border: '#78350f',
+                    doubleBorder: false,
+                    seed: 610
+                });
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 15px "Comfortaa", sans-serif';
+                ctx.fillText('👉 СЫГРАТЬ СНОВА [Z / КЛИК]', 400, 528);
+                ctx.restore();
+            } else {
+                // Концовка подавления: Возвращение в Белое Пространство
+                drawWhiteSpace();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+                ctx.fillRect(0, 0, W, H);
+
+                drawOmoriBox(110, 110, 580, 380, {
+                    fill: '#08080a',
+                    border: '#ffffff',
+                    doubleBorder: true,
+                    seed: 620
+                });
+
+                drawPortraitBox(335, 155, 130, 'OMORI', 'NEUTRAL');
+
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 23px "Comfortaa", sans-serif';
+                ctx.fillText('КОНЦОВКА 2: «БЕЛОЕ ПРОСТРАНСТВО НАВСЕГДА»', 400, 330);
+
+                ctx.fillStyle = '#e4e4e7';
+                ctx.font = '15px "Comfortaa", sans-serif';
+                ctx.fillText('Воспоминание снова заперто за дверью. Здесь тихо, пусто и безопасно.', 400, 365);
+                ctx.fillText('Добро пожаловать в БЕЛОЕ ПРОСТРАНСТВО. Ты живёшь здесь столько, сколько себя помнишь.', 400, 392);
+
+                drawOmoriBox(250, 420, 300, 48, {
+                    fill: '#18181b',
+                    border: '#ffffff',
+                    doubleBorder: false,
+                    seed: 625
+                });
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 15px "Comfortaa", sans-serif';
+                ctx.fillText('👉 ПОПРОБОВАТЬ СНОВА [Z / КЛИК]', 400, 449);
+                ctx.restore();
+            }
+        }
+
+        /***********************************************************************
+         * ОТРИСОВКА ИНТЕРФЕЙСА ДИАЛОГА OMORI И ВСПОМОГАТЕЛЬНЫХ ЭЛЕМЕНТОВ
+         ***********************************************************************/
+        function wrapText(context, text, x, y, maxWidth, lineHeight) {
+            const words = text.split(' ');
+            let line = '';
+            let curY = y;
+            for (let n = 0; n < words.length; n++) {
+                const testLine = line + words[n] + ' ';
+                const metrics = context.measureText(testLine);
+                if (metrics.width > maxWidth && n > 0) {
+                    context.fillText(line, x, curY);
+                    line = words[n] + ' ';
+                    curY += lineHeight;
+                } else {
+                    line = testLine;
+                }
+            }
+            context.fillText(line, x, curY);
+        }
+
+        function drawDialogueOverlay() {
+            if (!dialogue.active) return;
+
+            const boxX = 36, boxY = 426, boxW = 728, boxH = 152;
+
+            // Квадратное окно портрета справа НАД диалоговым окном (фирменный стиль OMORI)
+            if (dialogue.portrait && dialogue.portrait !== 'NONE') {
+                drawPortraitBox(boxX + boxW - 134, boxY - 144, 134, dialogue.portrait, dialogue.emotion);
+            }
+
+            // Плашка говорящего слева над диалогом (если указана)
+            if (dialogue.speaker) {
+                drawOmoriBox(boxX, boxY - 38, 210, 34, {
+                    fill: '#08080a',
+                    border: '#ffffff',
+                    doubleBorder: false,
+                    seed: 401
+                });
+                ctx.save();
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 15px "Comfortaa", sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText(dialogue.speaker, boxX + 16, boxY - 16);
+                ctx.restore();
+            }
+
+            // Основное чёрное диалоговое окно с двойной рисованной белой рамкой
+            drawOmoriBox(boxX, boxY, boxW, boxH, {
+                fill: '#08080a',
+                border: '#ffffff',
+                doubleBorder: true,
+                seed: 400,
+                boilAmp: 1.4
+            });
+
+            // Вывод текста по буквам
+            const fullText = getCurrentPageText();
+            const visibleText = fullText.slice(0, Math.floor(dialogue.charIndex));
+
+            ctx.save();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '17px "Comfortaa", sans-serif';
+            ctx.textAlign = 'left';
+            wrapText(ctx, visibleText, boxX + 26, boxY + 42, boxW - 52, 26);
+
+            // Если это последняя страница и есть варианты выбора — рисуем окно выбора слева над диалогом
+            if (dialogue.charIndex >= fullText.length && dialogue.pageIndex === dialogue.pages.length - 1 && dialogue.choices) {
+                const chW = 340;
+                const chH = 26 + dialogue.choices.length * 36;
+                const chX = boxX + 18;
+                const chY = boxY - chH - 12;
+
+                drawOmoriBox(chX, chY, chW, chH, {
+                    fill: '#08080a',
+                    border: '#ffffff',
+                    doubleBorder: true,
+                    seed: 420
+                });
+
+                dialogue.choices.forEach((c, idx) => {
+                    const isSel = dialogue.choiceIndex === idx;
+                    ctx.font = isSel ? 'bold 15px "Comfortaa", sans-serif' : '15px "Comfortaa", sans-serif';
+                    ctx.fillStyle = isSel ? '#ef4444' : '#ffffff';
+                    ctx.fillText((isSel ? '👉 ' : '    ') + c.label, chX + 18, chY + 32 + idx * 34);
+                });
+            }
+
+            // Прыгающая белая/красная стрелочка продолжения в правом нижнем углу диалога
+            if (dialogue.charIndex >= fullText.length) {
+                const bounce = Math.sin(Date.now() / 160) * 4;
+                const ax = boxX + boxW - 28;
+                const ay = boxY + boxH - 22 + bounce;
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.moveTo(ax - 7, ay - 5);
+                ctx.lineTo(ax + 7, ay - 5);
+                ctx.lineTo(ax, ay + 6);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        /***********************************************************************
+         * ВЗАИМОДЕЙСТВИЕ С ОБЪЕКТАМИ В МИРЕ
+         ***********************************************************************/
+        function getClosestInteractable() {
+            const list = currentLocation === 'WHITE_SPACE' ? getWhiteSpaceObjects() : getCorridorObjects();
+            let best = null;
+            let bestDist = 56; // радиус взаимодействия
+
+            // Смещение точки взгляда перед Омори
+            let lookX = player.x;
+            let lookY = player.y;
+            if (player.dir === 'up') lookY -= 18;
+            if (player.dir === 'down') lookY += 18;
+            if (player.dir === 'left') lookX -= 18;
+            if (player.dir === 'right') lookX += 18;
+
+            for (const obj of list) {
+                const d = Math.hypot(obj.x - lookX, obj.y - lookY);
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = obj;
+                }
+            }
+            return best;
+        }
+
+        function triggerInteraction(obj) {
+            if (!obj) return;
+            sound.playConfirm();
+
+            if (obj.id === 'lightbulb') {
+                flags.inspectedLightbulb = true;
+                startDialogue([
+                    {
+                        speaker: 'БЕЛОЕ ПРОСТРАНСТВО',
+                        text: 'С потолка свисает чёрная лампочка. Везде, куда бы ты ни посмотрел, — бесконечная белизна.',
+                        portrait: 'OMORI',
+                        emotion: 'NEUTRAL'
+                    },
+                    {
+                        speaker: 'БЕЛОЕ ПРОСТРАНСТВО',
+                        text: 'Ты заглядываешь внутрь лампочки. Там кромешная тьма. Ничего не видно.',
+                        portrait: 'OMORI',
+                        emotion: 'SAD'
+                    }
+                ]);
+            } else if (obj.id === 'mewo') {
+                flags.inspectedMewo = true;
+                sound.playBark();
+                startDialogue(
+                    [
+                        {
+                            speaker: 'БАТОН',
+                            text: 'Тяф! (Батон сидит на ладони и тянет тебе лапку с милыми подушечками. Ждёт, пока что-то произойдёт?)',
+                            portrait: 'BATON',
+                            emotion: 'NEUTRAL'
+                        }
+                    ],
+                    {
+                        choices: [
+                            {
+                                label: 'Дать лапку и погладить Батона',
+                                action: () => {
+                                    flags.mewoPetCount++;
+                                    flags.batonHeartTimer = 75;
+                                    sound.playBark();
+                                    sound.playHeal();
+                                    startDialogue([
+                                        {
+                                            speaker: 'БАТОН',
+                                            text: 'Тяф-тяф! Батон радостно шевелит огромными пушистыми ушками и даёт Ане пятюню лапкой! Аня чувствует прилив смелости.',
+                                            portrait: 'OMORI',
+                                            emotion: 'CALM'
+                                        }
+                                    ]);
+                                }
+                            },
+                            {
+                                label: 'Просто полюбоваться',
+                                action: () => {
+                                    startDialogue([
+                                        {
+                                            speaker: 'АНЯ',
+                                            text: 'Аня тепло улыбается, глядя на огромные уши, белую полоску на лбу и крошечную лапку Батона.',
+                                            portrait: 'OMORI',
+                                            emotion: 'NEUTRAL'
+                                        }
+                                    ]);
+                                }
+                            }
+                        ]
+                    }
+                );
+            } else if (obj.id === 'laptop') {
+                flags.inspectedLaptop = true;
+                startDialogue(
+                    [
+                        {
+                            speaker: 'НОУТБУК',
+                            text: 'Экран ноутбука излучает сухой тёплый шум. Что ты хочешь сделать?',
+                            portrait: 'OMORI',
+                            emotion: 'NEUTRAL'
+                        }
+                    ],
+                    {
+                        choices: [
+                            {
+                                label: 'Смотреть в экран',
+                                action: () => {
+                                    startDialogue([
+                                        {
+                                            speaker: 'НОУТБУК',
+                                            text: 'Аня смотрит на мерцающий экран ноутбука. В Белом Пространстве всё так же тихо.',
+                                            portrait: 'OMORI',
+                                            emotion: 'NEUTRAL'
+                                        }
+                                    ]);
+                                }
+                            }
+                        ]
+                    }
+                );
+            } else if (obj.id === 'sketchbook') {
+                flags.inspectedSketchbook = true;
+                sketchbookPage = 0;
+                currentState = GAME_STATE.SKETCHBOOK;
+            } else if (obj.id === 'tissues') {
+                flags.inspectedTissues = true;
+                startDialogue([
+                    {
+                        speaker: 'КОРОБКА САЛФЕТОК',
+                        text: 'Коробка белых бумажных салфеток. Для того, чтобы вытирать свои печали.',
+                        portrait: 'OMORI',
+                        emotion: 'SAD'
+                    }
+                ]);
+            } else if (obj.id === 'knife') {
+                flags.hasKnife = true;
+                flags.doorSpawned = true;
+                sound.playSlash();
+                startDialogue([
+                    {
+                        speaker: 'БЕЛОЕ ПРОСТРАНСТВО',
+                        text: 'Ты поднял БЛЕСТЯЩИЙ НОЖ. В холодном лезвии отражается твоё собственное безэмоциональное лицо.',
+                        portrait: 'OMORI',
+                        emotion: 'NEUTRAL'
+                    },
+                    {
+                        speaker: 'БЕЛОЕ ПРОСТРАНСТВО',
+                        text: 'Тук... тук... Внизу комнаты бесшумно появилась БЕЛАЯ ДВЕРЬ, отбрасывая слабую тень.',
+                        portrait: 'OMORI',
+                        emotion: 'AFRAID'
+                    }
+                ]);
+            } else if (obj.id === 'whitedoor') {
+                startDialogue(
+                    [
+                        {
+                            speaker: 'БЕЛАЯ ДВЕРЬ',
+                            text: 'Белая дверь отбрасывает слабую тень. Открыть её и сделать шаг наружу?',
+                            portrait: 'OMORI',
+                            emotion: 'NEUTRAL'
+                        }
+                    ],
+                    {
+                        choices: [
+                            {
+                                label: 'Открыть дверь',
+                                action: () => {
+                                    sound.playConfirm();
+                                    currentLocation = 'CORRIDOR';
+                                    player.x = 400;
+                                    player.y = 435;
+                                    player.dir = 'up';
+                                    sound.setTheme('corridor');
+                                    locationBadge.textContent = 'Локация: КОРИДОР ВОСПОМИНАНИЙ';
+                                    startDialogue([
+                                        {
+                                            speaker: 'КОРИДОР ВОСПОМИНАНИЙ',
+                                            text: 'Белизна сменяется сумеречным фиолетовым светом. Впереди на полу лежит знакомая ФОТОГРАФИЯ.',
+                                            portrait: 'OMORI',
+                                            emotion: 'NEUTRAL'
+                                        }
+                                    ]);
+                                }
+                            },
+                            {
+                                label: 'Остаться здесь',
+                                action: () => {}
+                            }
+                        ]
+                    }
+                );
+            } else if (obj.id === 'return_door') {
+                currentLocation = 'WHITE_SPACE';
+                player.x = 400;
+                player.y = 415;
+                player.dir = 'up';
+                sound.setTheme('whitespace');
+                locationBadge.textContent = 'Локация: БЕЛОЕ ПРОСТРАНСТВО';
+            } else if (obj.id === 'memory_friends') {
+                startDialogue([
+                    {
+                        speaker: 'ТЁПЛЫЕ ГОЛОСА',
+                        text: '«Аня! Мы так долго ждали тебя! Спасибо, что ты есть!»',
+                        portrait: 'OMORI',
+                        emotion: 'NEUTRAL'
+                    },
+                    {
+                        speaker: 'КОРИДОР ВОСПОМИНАНИЙ',
+                        text: 'Силуэты друзей мягко улыбаются, согревая это место теплом.',
+                        portrait: 'OMORI',
+                        emotion: 'CALM'
+                    }
+                ]);
+            } else if (obj.id === 'memory_mari') {
+                startDialogue([
+                    {
+                        speaker: 'ТИХАЯ МЕЛОДИЯ',
+                        text: 'Старое пианино. На пюпитре лежат ноты дуэта для скрипки и фортепиано.',
+                        portrait: 'OMORI',
+                        emotion: 'SAD'
+                    },
+                    {
+                        speaker: 'ШЁПОТ',
+                        text: '«Прости меня... Я просто хотела, чтобы всё получилось идеально...»',
+                        portrait: 'OMORI',
+                        emotion: 'AFRAID'
+                    }
+                ]);
+            } else if (obj.id === 'fallen_photo') {
+                sound.playScare();
+                startDialogue(
+                    [
+                        {
+                            speaker: 'ВЫПАВШАЯ ФОТОГРАФИЯ',
+                            text: 'Ты поднимаешь снимок с пола. На нём брат и сестра стоят у дерева в солнечный день.',
+                            portrait: 'OMORI',
+                            emotion: 'SAD'
+                        },
+                        {
+                            speaker: '???',
+                            text: 'Внезапно фотографию пронзают густые чёрные линии! Из темноты к тебе тянутся КРАСНЫЕ РУКИ!',
+                            portrait: 'SOMETHING',
+                            emotion: 'AFRAID'
+                        }
+                    ],
+                    {
+                        onFinish: () => {
+                            initBattle();
+                        }
+                    }
+                );
+            }
+        }
+
+        /***********************************************************************
+         * УПРАВЛЕНИЕ С КЛАВИАТУРЫ, МЫШИ И СЕНСОРНОГО ЭКРАНА
+         ***********************************************************************/
+        const keys = {};
+
+        window.addEventListener('keydown', (e) => {
+            sound.init();
+            keys[e.code] = true;
+
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+                e.preventDefault();
+            }
+
+            handleDiscreteKeyPress(e.code);
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+
+        function handleDiscreteKeyPress(code) {
+            const isAction = code === 'KeyZ' || code === 'Enter' || code === 'Space';
+            const isCancel = code === 'KeyX' || code === 'Escape' || code === 'ShiftLeft' || code === 'ShiftRight';
+            const isUp = code === 'ArrowUp' || code === 'KeyW';
+            const isDown = code === 'ArrowDown' || code === 'KeyS';
+            const isLeft = code === 'ArrowLeft' || code === 'KeyA';
+            const isRight = code === 'ArrowRight' || code === 'KeyD';
+
+            // 1. Титульный экран
+            if (currentState === GAME_STATE.TITLE) {
+                if (isAction) {
+                    startNewGame();
+                }
+                return;
+            }
+
+            // 2. Экран концовки
+            if (currentState === GAME_STATE.ENDING) {
+                if (isAction) {
+                    resetToTitle();
+                }
+                return;
+            }
+
+            // 3. Просмотр Альбома для рисования
+            if (currentState === GAME_STATE.SKETCHBOOK) {
+                if (isLeft) {
+                    sketchbookPage = (sketchbookPage - 1 + sketchbookDrawings.length) % sketchbookDrawings.length;
+                    sound.playCursor();
+                } else if (isRight) {
+                    sketchbookPage = (sketchbookPage + 1) % sketchbookDrawings.length;
+                    sound.playCursor();
+                } else if (isAction || isCancel) {
+                    sound.playConfirm();
+                    currentState = GAME_STATE.EXPLORE;
+                    checkKnifeTrigger();
+                }
+                return;
+            }
+
+            // 4. Активный диалог
+            if (dialogue.active) {
+                if (dialogue.choices && dialogue.charIndex >= getCurrentPageText().length && dialogue.pageIndex === dialogue.pages.length - 1) {
+                    if (isUp) {
+                        dialogue.choiceIndex = (dialogue.choiceIndex - 1 + dialogue.choices.length) % dialogue.choices.length;
+                        sound.playCursor();
+                        return;
+                    }
+                    if (isDown) {
+                        dialogue.choiceIndex = (dialogue.choiceIndex + 1) % dialogue.choices.length;
+                        sound.playCursor();
+                        return;
+                    }
+                }
+                if (isAction || isCancel) {
+                    advanceDialogue();
+                }
+                return;
+            }
+
+            // 5. Пошаговая битва
+            if (currentState === GAME_STATE.BATTLE) {
+                if (battle.phase === 'MENU') {
+                    if (isRight && battle.menuIndex % 2 === 0) { battle.menuIndex++; sound.playCursor(); }
+                    if (isLeft && battle.menuIndex % 2 === 1) { battle.menuIndex--; sound.playCursor(); }
+                    if (isDown && battle.menuIndex < 2) { battle.menuIndex += 2; sound.playCursor(); }
+                    if (isUp && battle.menuIndex >= 2) { battle.menuIndex -= 2; sound.playCursor(); }
+
+                    if (isAction) {
+                        if (battle.menuIndex === 0) {
+                            executePlayerBattleAction('ATTACK');
+                        } else if (battle.menuIndex === 1) {
+                            battle.phase = 'SUBMENU';
+                            battle.subMenuType = 'SKILLS';
+                            battle.subMenuIndex = 0;
+                            sound.playConfirm();
+                        } else if (battle.menuIndex === 2) {
+                            battle.phase = 'SUBMENU';
+                            battle.subMenuType = 'SNACKS';
+                            battle.subMenuIndex = 0;
+                            sound.playConfirm();
+                        } else if (battle.menuIndex === 3) {
+                            battle.phase = 'SUBMENU';
+                            battle.subMenuType = 'TOYS';
+                            battle.subMenuIndex = 0;
+                            sound.playConfirm();
+                        }
+                    }
+                } else if (battle.phase === 'SUBMENU') {
+                    const maxLen = battle.subMenuType === 'SKILLS' ? battle.skills.length :
+                                   (battle.subMenuType === 'SNACKS' ? battle.snacks.length : battle.toys.length);
+                    if (isUp) {
+                        battle.subMenuIndex = (battle.subMenuIndex - 1 + maxLen) % maxLen;
+                        sound.playCursor();
+                    }
+                    if (isDown) {
+                        battle.subMenuIndex = (battle.subMenuIndex + 1) % maxLen;
+                        sound.playCursor();
+                    }
+                    if (isCancel) {
+                        battle.phase = 'MENU';
+                        sound.playCursor();
+                    }
+                    if (isAction) {
+                        if (battle.subMenuType === 'SKILLS') {
+                            const sk = battle.skills[battle.subMenuIndex];
+                            if (battle.omori.juice >= sk.cost) {
+                                executePlayerBattleAction('SKILL', battle.subMenuIndex);
+                            } else {
+                                battle.logText = 'Недостаточно СОКА для этого навыка!';
+                            }
+                        } else if (battle.subMenuType === 'SNACKS') {
+                            const sn = battle.snacks[battle.subMenuIndex];
+                            if (sn.count > 0) executePlayerBattleAction('SNACK', battle.subMenuIndex);
+                        } else if (battle.subMenuType === 'TOYS') {
+                            const ty = battle.toys[battle.subMenuIndex];
+                            if (ty.count > 0) executePlayerBattleAction('TOY', battle.subMenuIndex);
+                        }
+                    }
+                } else if (battle.phase === 'FINAL_CHOICE') {
+                    if (isUp || isDown) {
+                        battle.choiceIndex = battle.choiceIndex === 0 ? 1 : 0;
+                        sound.playCursor();
+                    }
+                    if (isAction) {
+                        finishStoryChoice(battle.choiceIndex);
+                    }
+                }
+                return;
+            }
+
+            // 6. Исследование мира
+            if (currentState === GAME_STATE.EXPLORE && isAction) {
+                const target = getClosestInteractable();
+                if (target) {
+                    triggerInteraction(target);
+                }
+            }
+        }
+
+        function finishStoryChoice(choiceIdx) {
+            sound.playConfirm();
+            if (choiceIdx === 0) {
+                flags.endingType = 'ACCEPT';
+                sound.setTheme('ending');
+                locationBadge.textContent = 'ЭПИЛОГ: ПРОБУЖДЕНИЕ';
+            } else {
+                flags.endingType = 'SUPPRESS';
+                sound.setTheme('whitespace');
+                locationBadge.textContent = 'Локация: БЕЛОЕ ПРОСТРАНСТВО';
+            }
+            currentState = GAME_STATE.ENDING;
+        }
+
+        function startNewGame() {
+            sound.init();
+            sound.playConfirm();
+            sound.setTheme('whitespace');
+            currentState = GAME_STATE.EXPLORE;
+            currentLocation = 'WHITE_SPACE';
+            player.x = 400;
+            player.y = 335;
+            player.dir = 'down';
+            player.emotion = 'NEUTRAL';
+            locationBadge.textContent = 'Локация: БЕЛОЕ ПРОСТРАНСТВО';
+
+            startDialogue([
+                {
+                    speaker: 'БЕЛОЕ ПРОСТРАНСТВО',
+                    text: 'Добро пожаловать в БЕЛОЕ ПРОСТРАНСТВО. Ты живёшь здесь столько, сколько себя помнишь.',
+                    portrait: 'OMORI',
+                    emotion: 'NEUTRAL'
+                },
+                {
+                    speaker: 'БЕЛОЕ ПРОСТРАНСТВО',
+                    text: 'Осмотри знакомые вещи вокруг коврика с помощью клавиши [Z] или кнопки действия.',
+                    portrait: 'OMORI',
+                    emotion: 'NEUTRAL'
+                }
+            ]);
+        }
+
+        function resetToTitle() {
+            sound.playConfirm();
+            flags.inspectedMewo = false;
+            flags.inspectedLaptop = false;
+            flags.inspectedSketchbook = false;
+            flags.inspectedTissues = false;
+            flags.inspectedLightbulb = false;
+            flags.knifeSpawned = false;
+            flags.hasKnife = false;
+            flags.doorSpawned = false;
+            flags.endingType = null;
+            dialogue.active = false;
+            currentState = GAME_STATE.TITLE;
+            currentLocation = 'WHITE_SPACE';
+            sound.setTheme('whitespace');
+            locationBadge.textContent = 'Локация: БЕЛОЕ ПРОСТРАНСТВО';
+        }
+
+        // Поддержка клика мышкой и тача прямо по холсту
+        canvas.addEventListener('pointerdown', (e) => {
+            sound.init();
+            const rect = canvas.getBoundingClientRect();
+            const mx = ((e.clientX - rect.left) / rect.width) * W;
+            const my = ((e.clientY - rect.top) / rect.height) * H;
+
+            if (currentState === GAME_STATE.TITLE) {
+                startNewGame();
+                return;
+            }
+            if (currentState === GAME_STATE.ENDING) {
+                resetToTitle();
+                return;
+            }
+            if (currentState === GAME_STATE.SKETCHBOOK) {
+                if (mx < W / 2) {
+                    sketchbookPage = (sketchbookPage + 1) % sketchbookDrawings.length;
+                    sound.playCursor();
+                } else {
+                    currentState = GAME_STATE.EXPLORE;
+                    sound.playConfirm();
+                    checkKnifeTrigger();
+                }
+                return;
+            }
+            if (dialogue.active) {
+                if (dialogue.choices && dialogue.charIndex >= getCurrentPageText().length && dialogue.pageIndex === dialogue.pages.length - 1) {
+                    const chH = 26 + dialogue.choices.length * 36;
+                    const chY = 426 - chH - 12;
+                    dialogue.choices.forEach((c, idx) => {
+                        const itemY = chY + 12 + idx * 34;
+                        if (mx >= 54 && mx <= 394 && my >= itemY && my <= itemY + 32) {
+                            dialogue.choiceIndex = idx;
+                        }
+                    });
+                }
+                advanceDialogue();
+                return;
+            }
+            if (currentState === GAME_STATE.BATTLE) {
+                const actX = 294, actY = 390;
+                if (battle.phase === 'MENU') {
+                    for (let idx = 0; idx < 4; idx++) {
+                        const col = idx % 2;
+                        const row = Math.floor(idx / 2);
+                        const bx = actX + 20 + col * 220;
+                        const by = actY + 20 + row * 78;
+                        if (mx >= bx && mx <= bx + 208 && my >= by && my <= by + 66) {
+                            battle.menuIndex = idx;
+                            handleDiscreteKeyPress('KeyZ');
+                            return;
+                        }
+                    }
+                } else if (battle.phase === 'SUBMENU') {
+                    for (let idx = 0; idx < 4; idx++) {
+                        const iy = actY + 10 + idx * 30;
+                        if (mx >= actX + 10 && mx <= actX + 440 && my >= iy && my <= iy + 28) {
+                            battle.subMenuIndex = idx;
+                            handleDiscreteKeyPress('KeyZ');
+                            return;
+                        }
+                    }
+                    handleDiscreteKeyPress('KeyX');
+                } else if (battle.phase === 'FINAL_CHOICE') {
+                    for (let idx = 0; idx < 2; idx++) {
+                        const cy = actY + 52 + idx * 62;
+                        if (mx >= actX + 18 && mx <= actX + 452 && my >= cy && my <= cy + 54) {
+                            battle.choiceIndex = idx;
+                            finishStoryChoice(idx);
+                            return;
+                        }
+                    }
+                }
+                return;
+            }
+
+            // Если в режиме исследования кликнули по предмету рядом — взаимодействуем
+            if (currentState === GAME_STATE.EXPLORE) {
+                const target = getClosestInteractable();
+                if (target) {
+                    triggerInteraction(target);
+                }
+            }
+        });
+
+        // Кнопки звука и сброса
+        document.getElementById('btn-audio').addEventListener('click', () => {
+            const isMuted = sound.toggleMute();
+            document.getElementById('audio-icon').textContent = isMuted ? '🔇' : '🔊';
+            document.getElementById('audio-label').textContent = isMuted ? 'ЗВУК: ВЫКЛ' : 'ЗВУК: ВКЛ';
+        });
+
+        document.getElementById('btn-restart').addEventListener('click', () => {
+            resetToTitle();
+        });
+
+        /***********************************************************************
+         * ОСНОВНОЙ ИГРОВОЙ ЦИКЛ (UPDATE & RENDER)
+         ***********************************************************************/
+        function updateGame(timestamp) {
+            // 1. Обновление кадра дрожащей линии (line-boil каждые 150 мс)
+            if (timestamp - lastBoilTime >= BOIL_INTERVAL) {
+                boilFrame = (boilFrame + 1) % 3;
+                lastBoilTime = timestamp;
+            }
+
+            // 2. Обновление процедурного саундтрека
+            sound.update();
+
+            // 3. Обновление побуквенного вывода диалога
+            if (dialogue.active) {
+                const fullText = getCurrentPageText();
+                if (dialogue.charIndex < fullText.length) {
+                    dialogue.charIndex += 0.65;
+                    dialogue.charTimer++;
+                    if (dialogue.charTimer % 3 === 0) {
+                        const isCreepy = dialogue.portrait === 'SOMETHING';
+                        sound.playTextBlip(dialogue.portrait === 'MEWO' ? 760 : 520, isCreepy);
+                    }
+                }
+                return;
+            }
+
+            // 4. Движение Омори в режиме исследования
+            if (currentState === GAME_STATE.EXPLORE) {
+                let dx = 0, dy = 0;
+                if (keys['ArrowUp'] || keys['KeyW']) { dy -= 1; player.dir = 'up'; }
+                if (keys['ArrowDown'] || keys['KeyS']) { dy += 1; player.dir = 'down'; }
+                if (keys['ArrowLeft'] || keys['KeyA']) { dx -= 1; player.dir = 'left'; }
+                if (keys['ArrowRight'] || keys['KeyD']) { dx += 1; player.dir = 'right'; }
+
+                if (dx !== 0 || dy !== 0) {
+                    const len = Math.hypot(dx, dy);
+                    const isRunning = keys['KeyX'] || keys['ShiftLeft'] || keys['ShiftRight'];
+                    const spd = isRunning ? player.runSpeed : player.speed;
+                    const nx = player.x + (dx / len) * spd;
+                    const ny = player.y + (dy / len) * spd;
+
+                    // Границы локаций
+                    let minX = 90, maxX = 710, minY = 120, maxY = 520;
+                    if (currentLocation === 'CORRIDOR') {
+                        minX = 235; maxX = 565; minY = 135; maxY = 525;
+                    }
+
+                    player.x = Math.max(minX, Math.min(maxX, nx));
+                    player.y = Math.max(minY, Math.min(maxY, ny));
+                    player.moving = true;
+
+                    player.stepTimer++;
+                    if (player.stepTimer >= (isRunning ? 6 : 9)) {
+                        player.stepFrame = (player.stepFrame + 1) % 4;
+                        player.stepTimer = 0;
+                    }
+                } else {
+                    player.moving = false;
+                    player.stepFrame = 0;
+                }
+            }
+        }
+
+        function renderGame() {
+            ctx.clearRect(0, 0, W, H);
+
+            if (currentState === GAME_STATE.TITLE) {
+                drawTitleScreen();
+                return;
+            }
+
+            if (currentState === GAME_STATE.ENDING) {
+                drawEndingScreen();
+                return;
+            }
+
+            if (currentState === GAME_STATE.SKETCHBOOK) {
+                drawSketchbookModal();
+                return;
+            }
+
+            if (currentState === GAME_STATE.BATTLE) {
+                drawBattleScene();
+                return;
+            }
+
+            // Отрисовка текущей локации
+            if (currentLocation === 'WHITE_SPACE') {
+                drawWhiteSpace();
+            } else if (currentLocation === 'CORRIDOR') {
+                drawCorridorLocation();
+            }
+
+            // Подсказка взаимодействия над предметом, если Омори стоит рядом
+            if (!dialogue.active && currentState === GAME_STATE.EXPLORE) {
+                const closest = getClosestInteractable();
+                if (closest) {
+                    const bob = Math.sin(Date.now() / 180) * 3;
+                    const label = `[Z] ${closest.name}`;
+                    ctx.save();
+                    ctx.font = 'bold 12px "Comfortaa", sans-serif';
+                    const tw = ctx.measureText(label).width + 22;
+                    const bx = Math.max(12, Math.min(W - tw - 12, closest.x - tw / 2));
+                    const by = Math.max(14, closest.y - 58 + bob);
+
+                    drawOmoriBox(bx, by, tw, 28, {
+                        fill: '#08080a',
+                        border: '#ef4444',
+                        doubleBorder: false,
+                        seed: 901,
+                        boilAmp: 0.9
+                    });
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(label, bx + tw / 2, by + 18);
+                    ctx.restore();
+                }
+            }
+
+            // Отрисовка диалогового интерфейса поверх мира
+            drawDialogueOverlay();
+        }
+
+        function gameLoop(timestamp) {
+            updateGame(timestamp || 0);
+            renderGame();
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.onload = function () {
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
